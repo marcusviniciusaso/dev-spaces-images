@@ -1,0 +1,66 @@
+ARG BASE_IMAGE=quay.io/marolive/custom-udi:1.1.1
+FROM ${BASE_IMAGE}
+
+USER 0
+
+ARG GRADLE_VERSION_ARG=8.14.4
+ARG SPRING_BOOT_VERSION_ARG=4.0.3
+
+# ---- Gradle ----
+RUN set -euo pipefail; \
+    curl -fsSL -o /tmp/gradle.zip \
+      "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION_ARG}-bin.zip"; \
+    mkdir -p /opt/gradle; \
+    unzip -q /tmp/gradle.zip -d /opt/gradle; \
+    ln -s "/opt/gradle/gradle-${GRADLE_VERSION_ARG}" /opt/gradle/current; \
+    ln -sf /opt/gradle/current/bin/gradle /usr/local/bin/gradle; \
+    rm -f /tmp/gradle.zip; \
+    chown -R 10001:0 /opt/gradle
+
+# ---- Spring Boot CLI ----
+RUN set -euo pipefail; \
+    curl -fsSL -o /tmp/sbcli.tgz \
+      "https://repo.maven.apache.org/maven2/org/springframework/boot/spring-boot-cli/${SPRING_BOOT_VERSION_ARG}/spring-boot-cli-${SPRING_BOOT_VERSION_ARG}-bin.tar.gz"; \
+    mkdir -p /opt/spring-boot-cli; \
+    tar -C /opt/spring-boot-cli -xzf /tmp/sbcli.tgz; \
+    ln -sf "/opt/spring-boot-cli/spring-${SPRING_BOOT_VERSION_ARG}/bin/spring" /usr/local/bin/spring; \
+    rm -f /tmp/sbcli.tgz; \
+    chown -R 10001:0 /opt/spring-boot-cli
+
+RUN set -euo pipefail; \
+    cat > /etc/profile.d/11-gradle.sh <<'EOF'
+export GRADLE_HOME="/opt/gradle/current";
+export PATH="$GRADLE_HOME/bin:$PATH";
+EOF
+RUN chmod 0644 /etc/profile.d/11-gradle.sh
+
+ENV GRADLE_HOME="/opt/gradle/current" \
+    PATH="/opt/gradle/current/bin:${PATH}"
+
+# ---- Repositories ----
+# ---- public-maven-central ----
+RUN cat <<EOF > ~/.m2/settings.xml
+<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0 https://maven.apache.org/xsd/settings-1.0.0.xsd">
+  <mirrors>
+    <mirror>
+      <id>nexus</id>
+      <mirrorOf>*</mirrorOf>
+      <url>NEXUS_MAVEN_BASEURL_PLACEHOLDER</url>
+    </mirror>
+  </mirrors>
+  <servers>
+    <server>
+      <id>nexus</id>
+      <username>SEU_USUARIO</username>
+      <password>SUA_SENHA</password>
+    </server>
+  </servers>
+</settings>
+EOF
+
+RUN chmod 666 ~/.m2/settings.xml
+
+USER 10001
+CMD ["bash", "-lc", "sleep infinity"]

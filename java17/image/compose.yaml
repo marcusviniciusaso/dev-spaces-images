@@ -1,0 +1,10 @@
+services:
+  udi-java17:
+    build:
+      context: .
+      dockerfile: Containerfile
+      args:
+        BASE_IMAGE: ${BASE_IMAGE}
+        GRADLE_VERSION_ARG: ${GRADLE_VERSION_ARG}
+        SPRING_BOOT_VERSION_ARG: ${SPRING_BOOT_VERSION_ARG}
+    image: quay.io/${QUAY_ORG}/${IMAGE_NAME}:${IMAGE_TAG}
