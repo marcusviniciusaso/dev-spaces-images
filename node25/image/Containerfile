@@ -1,0 +1,64 @@
+ARG BASE_IMAGE=quay.io/marolive/custom-udi:1.1.1
+FROM ${BASE_IMAGE}
+
+USER 0
+
+ARG NODE_VERSION_ARG=25.7.0
+ARG NPM_VERSION_ARG=11.11.0
+ARG NESTJS_VERSION_ARG=11.1.14
+
+# ---- Node.js ----
+RUN set -euo pipefail; \
+  PM="microdnf"; command -v microdnf >/dev/null 2>&1 || PM="dnf"; \
+  $PM install -y xz tar; \
+  $PM clean all; \
+  arch="${TARGETARCH:-}"; \
+  if [ -z "$arch" ]; then \
+    uarch="$(uname -m)"; \
+    case "$uarch" in \
+      x86_64) arch="amd64" ;; \
+      aarch64|arm64) arch="arm64" ;; \
+      *) echo "Unsupported arch: $uarch" && exit 1 ;; \
+    esac; \
+  fi; \
+  case "$arch" in \
+    amd64) node_arch="x64" ;; \
+    arm64) node_arch="arm64" ;; \
+    *) echo "Unsupported TARGETARCH: $arch" && exit 1 ;; \
+  esac; \
+  curl -fsSL -o /tmp/node.tar.xz \
+    "https://nodejs.org/dist/v${NODE_VERSION_ARG}/node-v${NODE_VERSION_ARG}-linux-${node_arch}.tar.xz"; \
+  mkdir -p /opt/node; \
+  tar -C /opt/node -xJf /tmp/node.tar.xz; \
+  ln -s "/opt/node/node-v${NODE_VERSION_ARG}-linux-${node_arch}" /opt/node/current; \
+  ln -sf /opt/node/current/bin/node /usr/local/bin/node; \
+  ln -sf /opt/node/current/bin/npm  /usr/local/bin/npm; \
+  ln -sf /opt/node/current/bin/npx  /usr/local/bin/npx; \
+  rm -f /tmp/node.tar.xz; \
+  /opt/node/current/bin/npm install -g "npm@${NPM_VERSION_ARG}"; \
+  ( /opt/node/current/bin/npm install -g "@nestjs/cli@${NESTJS_VERSION_ARG}" || \
+    /opt/node/current/bin/npm install -g "@nestjs/cli@11.0.16" ); \
+  chown -R 10001:0 /opt/node
+
+RUN set -euo pipefail; \
+    cat > /etc/profile.d/20-node.sh <<'EOF'
+export NODE_HOME="/opt/node/current"
+export PATH="$NODE_HOME/bin:$PATH"
+EOF
+RUN chmod 0644 /etc/profile.d/20-node.sh
+
+ENV NODE_HOME="/opt/node/current" \
+    PATH="/opt/node/current/bin:${PATH}"
+
+# ---- Repositories ----
+# ---- public-npm-central ----
+RUN cat <<EOF > ~/.npmrc
+registry=NEXUS_NPM_BASEURL_PLACEHOLDER
+always-auth=true
+strict-ssl=false
+EOF
+
+RUN chmod 666 ~/.npmrc
+
+USER 10001
+CMD ["bash", "-lc", "sleep infinity"]

@@ -1,0 +1,11 @@
+services:
+  udi-node25:
+    build:
+      context: .
+      dockerfile: Containerfile
+      args:
+        BASE_IMAGE: ${BASE_IMAGE}
+        NODE_VERSION_ARG: ${NODE_VERSION_ARG}
+        NPM_VERSION_ARG: ${NPM_VERSION_ARG}
+        NESTJS_VERSION_ARG: ${NESTJS_VERSION_ARG}
+    image: quay.io/${QUAY_ORG}/${IMAGE_NAME}:${IMAGE_TAG}
