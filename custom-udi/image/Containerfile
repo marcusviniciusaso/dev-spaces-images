@@ -101,13 +101,6 @@ RUN set -euo pipefail; \
       echo "pip3 não encontrado; instale python3-pip" && exit 1; \
     fi
 
-# ---- podman ----
-RUN set -euo pipefail; \
-    if ! command -v podman >/dev/null 2>&1; then \
-      if command -v dnf >/dev/null 2>&1; then dnf install -y podman && dnf clean all; \
-      else echo "podman ausente e dnf indisponível" && exit 1; fi; \
-    fi
-
 RUN set -euo pipefail; \
     mkdir -p /etc/bash_completion.d; \
     (kubectl completion bash > /etc/bash_completion.d/kubectl || true); \
@@ -119,8 +112,8 @@ RUN set -euo pipefail; \
     cat > /etc/devspaces-linux-release <<'EOF'
 devspaces_distro:
   type: base
-  version: "1.1.1"
-  release_date: "2026-02-20"
+  version: "1.1.2"
+  release_date: "2026-03-08"
 os:
   name: "Red Hat Enterprise Linux"
   version: "9.6"
@@ -145,8 +138,6 @@ LABEL org.opencontainers.image.title="Dev Spaces Custom UDI" \
       org.opencontainers.image.description="UDI customizada para Dev Spaces 3.22" \
       org.opencontainers.image.source="https://github.com/marcusviniciusaso/custom-udi" \
       org.opencontainers.image.vendor="Red Hat (sample)" \
-      org.opencontainers.image.version="1.1.1"
+      org.opencontainers.image.version="1.1.2"
 
 USER 10001
-
-CMD ["bash", "-lc", "sleep infinity"]
