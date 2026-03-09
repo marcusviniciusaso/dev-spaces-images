@@ -1,4 +1,4 @@
-ARG BASE_IMAGE=quay.io/marolive/custom-udi:1.1.1
+ARG BASE_IMAGE=quay.io/marolive/custom-udi:1.1.2
 FROM ${BASE_IMAGE}
 
 USER 0
@@ -63,4 +63,3 @@ EOF
 RUN chmod 666 ~/.m2/settings.xml
 
 USER 10001
-CMD ["bash", "-lc", "sleep infinity"]
