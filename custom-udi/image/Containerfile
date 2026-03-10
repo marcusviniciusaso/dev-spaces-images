@@ -112,8 +112,8 @@ RUN set -euo pipefail; \
     cat > /etc/devspaces-linux-release <<'EOF'
 devspaces_distro:
   type: base
-  version: "1.1.2"
-  release_date: "2026-03-08"
+  version: "1.1.3"
+  release_date: "2026-03-10"
 os:
   name: "Red Hat Enterprise Linux"
   version: "9.6"
@@ -138,6 +138,23 @@ LABEL org.opencontainers.image.title="Dev Spaces Custom UDI" \
       org.opencontainers.image.description="UDI customizada para Dev Spaces 3.22" \
       org.opencontainers.image.source="https://github.com/marcusviniciusaso/custom-udi" \
       org.opencontainers.image.vendor="Red Hat (sample)" \
-      org.opencontainers.image.version="1.1.2"
+      org.opencontainers.image.version="1.1.3"
+
+CMD ["/bin/sh", "-c", "if [ \"$KUBEDOCK_ENABLED\" = \"true\" ]; then \
+    MAX_RETRIES=60; \
+    COUNT=0; \
+    echo \"Iniciando verificação de Kubeconfig...\"; \
+    while [ ! -f /home/user/.kube/config ] && [ $COUNT -lt $MAX_RETRIES ]; do \
+        echo \"[$COUNT/$MAX_RETRIES] Kubeconfig não encontrado em /home/user/.kube/config. Aguardando...\"; \
+        sleep 2; \
+        COUNT=$((COUNT + 1)); \
+    done; \
+    if [ -f /home/user/.kube/config ]; then \
+        echo \"Kubeconfig encontrado. Iniciando Kubedock...\"; \
+    else \
+        echo \"ERRO: Kubeconfig não encontrado após timeout. Podman não estará disponível.\"; \
+    fi; \
+fi; \
+tail -f /dev/null"]
 
 USER 10001
