@@ -111,8 +111,7 @@ RUN set -euo pipefail; \
     (helm completion bash > /etc/bash_completion.d/helm || true)
 
 # ---- nota de versao ----
-RUN set -euo pipefail; \
-    cat > /etc/devspaces-linux-release <<'EOF'
+RUN cat <<EOF > /etc/devspaces-linux-release && chmod 0644 /etc/devspaces-linux-release
 devspaces_distro:
   type: base
   version: "1.2.0"
@@ -121,11 +120,10 @@ os:
   name: "Red Hat Enterprise Linux"
   version: "9.6"
 EOF
-RUN chmod 0644 /etc/devspaces-linux-release
 
 # ---- Repositories ----
 # ---- public-yum-central ----
-RUN cat <<EOF > /etc/yum.repos.d/nexus-repo
+RUN cat <<EOF > /etc/yum.repos.d/nexus-repo && chmod 666 /etc/yum.repos.d/nexus-repo
 [nexus-interno]
 name=Repositorio Interno Nexus
 baseurl=NEXUS_BASEURL_PLACEHOLDER
@@ -134,8 +132,6 @@ gpgcheck=0
 sslverify=0
 priority=1
 EOF
-
-RUN chmod 666 /etc/yum.repos.d/nexus-repo
 
 LABEL org.opencontainers.image.title="Dev Spaces Custom UDI" \
       org.opencontainers.image.description="UDI customizada para Dev Spaces 3.22" \

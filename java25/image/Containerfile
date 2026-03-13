@@ -69,7 +69,7 @@ ENV JAVA_HOME="/usr/lib/jvm/java-25-openjdk" \
 
 # ---- Repositories ----
 # ---- public-maven-central ----
-RUN cat <<EOF > ~/.m2/settings.xml
+RUN cat <<EOF > ~/.m2/settings.xml && chmod 666 ~/.m2/settings.xml
 <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
         xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0 https://maven.apache.org/xsd/settings-1.0.0.xsd">
@@ -89,7 +89,5 @@ RUN cat <<EOF > ~/.m2/settings.xml
   </servers>
 </settings>
 EOF
-
-RUN chmod 666 ~/.m2/settings.xml
 
 USER 10001
