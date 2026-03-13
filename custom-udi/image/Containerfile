@@ -115,8 +115,8 @@ RUN set -euo pipefail; \
     cat > /etc/devspaces-linux-release <<'EOF'
 devspaces_distro:
   type: base
-  version: "1.1.4"
-  release_date: "2026-03-10"
+  version: "1.2.0"
+  release_date: "2026-03-13"
 os:
   name: "Red Hat Enterprise Linux"
   version: "9.6"
@@ -141,6 +141,6 @@ LABEL org.opencontainers.image.title="Dev Spaces Custom UDI" \
       org.opencontainers.image.description="UDI customizada para Dev Spaces 3.22" \
       org.opencontainers.image.source="https://github.com/marcusviniciusaso/custom-udi" \
       org.opencontainers.image.vendor="Red Hat (sample)" \
-      org.opencontainers.image.version="1.1.4"
+      org.opencontainers.image.version="1.2.0"
 
 USER 10001
