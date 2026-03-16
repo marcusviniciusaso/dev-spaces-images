@@ -1,11 +1,11 @@
-ARG BASE_IMAGE=quay.io/marolive/custom-udi:1.1.1
+ARG BASE_IMAGE=quay.io/marolive/custom-udi:1.2.0
 FROM ${BASE_IMAGE}
 
 USER 0
 
 ARG NODE_VERSION_ARG=25.7.0
-ARG NPM_VERSION_ARG=11.11.0
-ARG NESTJS_VERSION_ARG=11.1.14
+ARG NPM_VERSION_ARG=11.10.1
+ARG NESTJS_VERSION_ARG=11.0.16
 
 # ---- Node.js ----
 RUN set -euo pipefail; \
@@ -36,29 +36,24 @@ RUN set -euo pipefail; \
   ln -sf /opt/node/current/bin/npx  /usr/local/bin/npx; \
   rm -f /tmp/node.tar.xz; \
   /opt/node/current/bin/npm install -g "npm@${NPM_VERSION_ARG}"; \
-  ( /opt/node/current/bin/npm install -g "@nestjs/cli@${NESTJS_VERSION_ARG}" || \
-    /opt/node/current/bin/npm install -g "@nestjs/cli@11.0.16" ); \
+  /opt/node/current/bin/npm install -g "@nestjs/cli@${NESTJS_VERSION_ARG}"; \
   chown -R 10001:0 /opt/node
 
 RUN set -euo pipefail; \
-    cat > /etc/profile.d/20-node.sh <<'EOF'
+    cat <<'EOF' > /etc/profile.d/20-node.sh && chmod 0644 /etc/profile.d/20-node.sh
 export NODE_HOME="/opt/node/current"
 export PATH="$NODE_HOME/bin:$PATH"
 EOF
-RUN chmod 0644 /etc/profile.d/20-node.sh
 
 ENV NODE_HOME="/opt/node/current" \
     PATH="/opt/node/current/bin:${PATH}"
 
 # ---- Repositories ----
 # ---- public-npm-central ----
-RUN cat <<EOF > ~/.npmrc
+RUN cat <<EOF > ~/.npmrc && chmod 666 ~/.npmrc
 registry=NEXUS_NPM_BASEURL_PLACEHOLDER
 always-auth=true
 strict-ssl=false
 EOF
 
-RUN chmod 666 ~/.npmrc
-
 USER 10001
-CMD ["bash", "-lc", "sleep infinity"]
