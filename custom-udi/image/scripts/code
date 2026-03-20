@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+target="${1:-.}"
+
+resolve_path() {
+  readlink -f -- "$1"
+}
+
+# Suporte básico a file:line[:column]
+path_part="$target"
+line_part=""
+col_part=""
+
+if [[ "$target" =~ ^(.+):([0-9]+)(:([0-9]+))?$ ]]; then
+  candidate="${BASH_REMATCH[1]}"
+  if [[ -e "$candidate" ]]; then
+    path_part="$candidate"
+    line_part="${BASH_REMATCH[2]}"
+    col_part="${BASH_REMATCH[4]:-}"
+  fi
+fi
+
+# code .
+if [[ "$target" == "." ]]; then
+  if [[ -n "${VSCODE_DEFAULT_WORKSPACE:-}" && -f "${VSCODE_DEFAULT_WORKSPACE}" ]]; then
+    printf '%s\n' "${VSCODE_DEFAULT_WORKSPACE}"
+    exit 0
+  fi
+
+  if [[ -f /projects/.code-workspace ]]; then
+    printf '%s\n' "/projects/.code-workspace"
+    exit 0
+  fi
+
+  printf '%s\n' "$(pwd)"
+  exit 0
+fi
+
+abs="$(resolve_path "$path_part")"
+
+if [[ -f "$abs" ]]; then
+  if [[ -n "$line_part" ]]; then
+    if [[ -n "$col_part" ]]; then
+      printf '%s:%s:%s\n' "$abs" "$line_part" "$col_part"
+    else
+      printf '%s:%s\n' "$abs" "$line_part"
+    fi
+  else
+    printf '%s\n' "$abs"
+  fi
+  exit 0
+fi
+
+if [[ -d "$abs" ]]; then
+  if [[ -f "$abs/.code-workspace" ]]; then
+    printf '%s\n' "$abs/.code-workspace"
+  else
+    printf '%s\n' "$abs"
+  fi
+  exit 0
+fi
+
+echo "code: caminho não encontrado: $target" >&2
+exit 1
