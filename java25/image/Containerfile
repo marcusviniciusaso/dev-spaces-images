@@ -1,4 +1,4 @@
-ARG BASE_IMAGE=quay.io/marolive/custom-udi:1.2.2
+ARG BASE_IMAGE=quay.io/marolive/custom-udi:1.2.5
 FROM ${BASE_IMAGE}
 
 USER 0
