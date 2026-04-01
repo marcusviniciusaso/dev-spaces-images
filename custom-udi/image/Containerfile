@@ -10,6 +10,7 @@ ARG KIND_VERSION=v0.26.0
 
 COPY --chown=user:root --chmod=755 scripts/entrypoint.sh /entrypoint.sh
 
+# ---- System setup: arch detection + packages + fallbacks ----
 RUN set -euo pipefail; \
     arch="${TARGETARCH:-}"; \
     if [ -z "$arch" ]; then \
@@ -20,9 +21,8 @@ RUN set -euo pipefail; \
         *) echo "Unsupported arch: $uarch" && exit 1 ;; \
       esac; \
     fi; \
-    echo "$arch" > /tmp/ARCH
-
-RUN set -euo pipefail; \
+    echo "$arch" > /tmp/ARCH; \
+    \
     PM="microdnf"; command -v microdnf >/dev/null 2>&1 || PM="dnf"; \
     REQUIRED="gnupg2 ca-certificates unzip zip jq git tree bash-completion iputils vim-enhanced"; \
     $PM install -y $REQUIRED; \
@@ -31,11 +31,8 @@ RUN set -euo pipefail; \
     else \
         echo "traceroute não encontrado, usar fallback (tracepath)"; \
     fi; \
-    $PM clean all
-
-# ---- Fallbacks (traceroute e lsb-release/redhat-lsb-core) ----
-RUN set -euo pipefail; \
-    # ---- Fallback traceroute ----
+    $PM clean all; \
+    \
     if ! command -v traceroute >/dev/null 2>&1; then \
         echo "Wrapper para traceroute..."; \
         printf '#!/bin/bash\n' > /usr/local/bin/traceroute; \
@@ -44,7 +41,6 @@ RUN set -euo pipefail; \
         chmod +x /usr/local/bin/traceroute; \
     fi; \
     \
-    # ---- Fallback lsb-release/redhat-lsb-core ----
     if ! command -v lsb_release >/dev/null 2>&1; then \
         echo "Script lsb_release customizado..."; \
         printf '#!/bin/bash\n' > /usr/local/bin/lsb_release; \
@@ -59,7 +55,6 @@ RUN set -euo pipefail; \
         chmod +x /usr/local/bin/lsb_release; \
     fi; \
     \
-    # ---- Fallback code ----
     if ! command -v code >/dev/null 2>&1; then \
         echo "Script wrapper para o comando code..."; \
         printf '#!/bin/bash\n' > /usr/local/bin/code; \
@@ -83,64 +78,56 @@ RUN set -euo pipefail; \
       echo "dnf não encontrado; instale azure-cli manualmente." && exit 1; \
     fi
 
-# ---- oc + kubectl ----
+# ---- CLI tools + CEKit + bash completions + nexus repo ----
 RUN set -euo pipefail; \
+    arch="$(cat /tmp/ARCH)"; \
+    \
     curl -fsSL -o /tmp/ocp-client.tar.gz \
       "https://mirror.openshift.com/pub/openshift-v4/clients/ocp/stable-4.18/openshift-client-linux.tar.gz"; \
     tar -C /tmp -xzf /tmp/ocp-client.tar.gz; \
     install -m 0755 /tmp/oc /usr/local/bin/oc; \
     if [ -f /tmp/kubectl ]; then install -m 0755 /tmp/kubectl /usr/local/bin/kubectl; fi; \
-    rm -rf /tmp/oc /tmp/kubectl /tmp/README.md /tmp/ocp-client.tar.gz
-
-# ---- helm ----
-RUN set -euo pipefail; \
-    arch="$(cat /tmp/ARCH)"; \
+    rm -rf /tmp/oc /tmp/kubectl /tmp/README.md /tmp/ocp-client.tar.gz; \
+    \
     curl -fsSL -o /tmp/helm.tgz \
       "https://get.helm.sh/helm-${HELM_VERSION}-linux-${arch}.tar.gz"; \
     tar -C /tmp -xzf /tmp/helm.tgz; \
     install -m 0755 "/tmp/linux-${arch}/helm" /usr/local/bin/helm; \
-    rm -rf /tmp/helm.tgz "/tmp/linux-${arch}"
-
-# ---- kind ----
-RUN set -euo pipefail; \
-    arch="$(cat /tmp/ARCH)"; \
+    rm -rf /tmp/helm.tgz "/tmp/linux-${arch}"; \
+    \
     curl -fsSL -o /usr/local/bin/kind \
       "https://kind.sigs.k8s.io/dl/${KIND_VERSION}/kind-linux-${arch}"; \
-    chmod 0755 /usr/local/bin/kind
-
-# ---- CEKit ----
-RUN set -euo pipefail; \
+    chmod 0755 /usr/local/bin/kind; \
+    \
     if command -v pip3 >/dev/null 2>&1; then \
       pip3 install --no-cache-dir -U cekit; \
     else \
       echo "pip3 não encontrado; instale python3-pip" && exit 1; \
-    fi
-
-RUN set -euo pipefail; \
+    fi; \
+    \
     mkdir -p /etc/bash_completion.d; \
     (kubectl completion bash > /etc/bash_completion.d/kubectl || true); \
     (oc completion bash > /etc/bash_completion.d/oc || true); \
-    (helm completion bash > /etc/bash_completion.d/helm || true)
+    (helm completion bash > /etc/bash_completion.d/helm || true); \
+    \
+    printf '%s\n' \
+      '[nexus-interno]' \
+      'name=Repositorio Interno Nexus' \
+      'baseurl=NEXUS_BASEURL_PLACEHOLDER' \
+      'enabled=1' \
+      'gpgcheck=0' \
+      'sslverify=0' \
+      'priority=1' \
+      > /etc/yum.repos.d/nexus-repo; \
+    chmod 666 /etc/yum.repos.d/nexus-repo
 
 # ---- nota de versao ----
 COPY --chmod=0644 scripts/release-notes.yaml /etc/devspaces-linux-release
-
-# ---- Repositories ----
-# ---- public-yum-central ----
-RUN cat <<EOF > /etc/yum.repos.d/nexus-repo && chmod 666 /etc/yum.repos.d/nexus-repo
-[nexus-interno]
-name=Repositorio Interno Nexus
-baseurl=NEXUS_BASEURL_PLACEHOLDER
-enabled=1
-gpgcheck=0
-sslverify=0
-priority=1
-EOF
 
 LABEL org.opencontainers.image.title="Dev Spaces Custom UDI" \
       org.opencontainers.image.description="UDI customizada para Dev Spaces 3.22" \
       org.opencontainers.image.source="https://github.com/marcusviniciusaso/custom-udi" \
       org.opencontainers.image.vendor="Red Hat (sample)" \
-      org.opencontainers.image.version="1.2.6"
+      org.opencontainers.image.version="1.2.7"
 
 USER 10001
