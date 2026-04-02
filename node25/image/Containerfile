@@ -1,4 +1,4 @@
-ARG BASE_IMAGE=quay.io/marolive/custom-udi:1.2.6
+ARG BASE_IMAGE=quay.io/marolive/custom-udi:1.2.7
 FROM ${BASE_IMAGE}
 
 USER 0
@@ -39,21 +39,20 @@ RUN set -euo pipefail; \
   /opt/node/current/bin/npm install -g "@nestjs/cli@${NESTJS_VERSION_ARG}"; \
   chown -R 10001:0 /opt/node
 
+# ---- Environment config ----
 RUN set -euo pipefail; \
-    cat <<'EOF' > /etc/profile.d/20-node.sh && chmod 0644 /etc/profile.d/20-node.sh
-export NODE_HOME="/opt/node/current"
-export PATH="$NODE_HOME/bin:$PATH"
-EOF
+    printf 'export NODE_HOME="/opt/node/current"\nexport PATH="$NODE_HOME/bin:$PATH"\n' \
+      > /etc/profile.d/20-node.sh; \
+    chmod 0644 /etc/profile.d/20-node.sh; \
+    \
+    printf '%s\n' \
+      'registry=NEXUS_NPM_BASEURL_PLACEHOLDER' \
+      'always-auth=true' \
+      'strict-ssl=false' \
+      > ~/.npmrc; \
+    chmod 666 ~/.npmrc
 
 ENV NODE_HOME="/opt/node/current" \
     PATH="/opt/node/current/bin:${PATH}"
-
-# ---- Repositories ----
-# ---- public-npm-central ----
-RUN cat <<EOF > ~/.npmrc && chmod 666 ~/.npmrc
-registry=NEXUS_NPM_BASEURL_PLACEHOLDER
-always-auth=true
-strict-ssl=false
-EOF
 
 USER 10001
