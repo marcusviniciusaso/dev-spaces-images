@@ -1,0 +1,52 @@
+ARG BASE_IMAGE=quay.io/marolive/custom-udi:1.2.7
+
+FROM ${BASE_IMAGE}
+
+USER 0
+
+ARG ADT_VERSION=26.3.1
+
+# ---- Ansible system dependencies ----
+RUN set -euo pipefail; \
+    PM="microdnf"; command -v microdnf >/dev/null 2>&1 || PM="dnf"; \
+    EXCLUDE=""; [ "$PM" = "dnf" ] && EXCLUDE="--exclude container-selinux"; \
+    $PM install -y $EXCLUDE \
+      buildah \
+      crun \
+      fuse-overlayfs \
+      gcc \
+      libssh-devel \
+      ncurses \
+      openssh-clients \
+      python3-cffi \
+      python3-devel \
+      skopeo \
+      util-linux-user \
+      which \
+      zsh \
+      pinentry; \
+    $PM clean all; \
+    arch="$(uname -m)"; \
+    curl -fsSL -o /usr/local/bin/dumb-init \
+      "https://github.com/Yelp/dumb-init/releases/download/v1.2.5/dumb-init_1.2.5_${arch}"; \
+    chmod 0755 /usr/local/bin/dumb-init
+
+# ---- Ansible Dev Tools (pip) + Ansible Collections ----
+COPY scripts/requirements.txt /tmp/requirements.txt
+COPY scripts/requirements.yml /tmp/requirements.yml
+
+RUN set -euo pipefail; \
+    pip3 install --no-cache-dir -U \
+      "ansible-dev-tools==${ADT_VERSION}" \
+      -r /tmp/requirements.txt; \
+    ansible-galaxy collection install -r /tmp/requirements.yml; \
+    mkdir -p /home/user/.ansible/roles /usr/share/ansible/roles /etc/ansible/roles; \
+    rm -f /tmp/requirements.txt /tmp/requirements.yml
+
+# ---- Ansible bash prompt ----
+COPY --chmod=0644 scripts/ansible-prompt.sh /etc/profile.d/ansible-prompt.sh
+
+ENV ANSIBLE_DEV_TOOLS_CONTAINER=1 \
+    BUILDAH_ISOLATION=chroot
+
+USER 10001

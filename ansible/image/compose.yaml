@@ -1,0 +1,9 @@
+services:
+  udi-ansible:
+    build:
+      context: .
+      dockerfile: Containerfile
+      args:
+        BASE_IMAGE: ${BASE_IMAGE}
+        ADT_VERSION: ${ADT_VERSION}
+    image: quay.io/${QUAY_ORG}/${IMAGE_NAME}:${IMAGE_TAG}
