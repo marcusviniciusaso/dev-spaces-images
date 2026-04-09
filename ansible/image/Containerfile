@@ -36,15 +36,16 @@ COPY scripts/requirements.txt /tmp/requirements.txt
 COPY scripts/requirements.yml /tmp/requirements.yml
 
 RUN set -euo pipefail; \
+    rm -rf /home/tooling/.local/lib/python3.*/site-packages/attr* \
+           /home/user/.local/lib/python3.*/site-packages/attr* \
+           /usr/lib/python3.*/site-packages/attr* \
+           /usr/lib64/python3.*/site-packages/attr*; \
     pip3 install --no-cache-dir -U \
       "ansible-dev-tools==${ADT_VERSION}" \
       -r /tmp/requirements.txt; \
     ansible-galaxy collection install -r /tmp/requirements.yml; \
     mkdir -p /home/user/.ansible/roles /usr/share/ansible/roles /etc/ansible/roles; \
     rm -f /tmp/requirements.txt /tmp/requirements.yml
-
-# ---- Ansible bash prompt ----
-COPY --chmod=0644 scripts/ansible-prompt.sh /etc/profile.d/ansible-prompt.sh
 
 ENV ANSIBLE_DEV_TOOLS_CONTAINER=1 \
     BUILDAH_ISOLATION=chroot
