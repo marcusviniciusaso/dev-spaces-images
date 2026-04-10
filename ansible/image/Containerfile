@@ -6,7 +6,8 @@ USER 0
 
 ARG ADT_VERSION=26.3.1
 
-# ---- Ansible system dependencies ----
+COPY scripts/requirements.txt scripts/requirements.yml /tmp/
+
 RUN set -euo pipefail; \
     PM="microdnf"; command -v microdnf >/dev/null 2>&1 || PM="dnf"; \
     EXCLUDE=""; [ "$PM" = "dnf" ] && EXCLUDE="--exclude container-selinux"; \
@@ -29,13 +30,7 @@ RUN set -euo pipefail; \
     arch="$(uname -m)"; \
     curl -fsSL -o /usr/local/bin/dumb-init \
       "https://github.com/Yelp/dumb-init/releases/download/v1.2.5/dumb-init_1.2.5_${arch}"; \
-    chmod 0755 /usr/local/bin/dumb-init
-
-# ---- Ansible Dev Tools (pip) + Ansible Collections ----
-COPY scripts/requirements.txt /tmp/requirements.txt
-COPY scripts/requirements.yml /tmp/requirements.yml
-
-RUN set -euo pipefail; \
+    chmod 0755 /usr/local/bin/dumb-init; \
     rm -rf /home/tooling/.local/lib/python3.*/site-packages/attr* \
            /home/user/.local/lib/python3.*/site-packages/attr* \
            /usr/lib/python3.*/site-packages/attr* \
