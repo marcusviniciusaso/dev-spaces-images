@@ -1,0 +1,8 @@
+services:
+  udi-python:
+    build:
+      context: .
+      dockerfile: Containerfile
+      args:
+        BASE_IMAGE: ${BASE_IMAGE}
+    image: quay.io/${QUAY_ORG}/${IMAGE_NAME}:${IMAGE_TAG}
