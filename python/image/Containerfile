@@ -3,7 +3,7 @@ FROM ${BASE_IMAGE}
 
 USER 0
 
-# ---- Python 3.12 ----
+# ---- Python 3.12 + pip tools + environment config ----
 RUN set -euo pipefail; \
     PM="microdnf"; command -v microdnf >/dev/null 2>&1 || PM="dnf"; \
     $PM install -y \
@@ -18,16 +18,13 @@ RUN set -euo pipefail; \
     ln -sf /usr/bin/python3.12 /usr/local/bin/python3; \
     ln -sf /usr/bin/python3.12 /usr/local/bin/python; \
     ln -sf /usr/bin/pip3.12    /usr/local/bin/pip3; \
-    ln -sf /usr/bin/pip3.12    /usr/local/bin/pip
-
-# ---- pip tools ----
-RUN python3.12 -m pip install --no-cache-dir -U \
+    ln -sf /usr/bin/pip3.12    /usr/local/bin/pip; \
+    \
+    python3.12 -m pip install --no-cache-dir -U \
       pip setuptools wheel virtualenv; \
     ln -sf /usr/local/bin/pip3.12 /usr/local/bin/pip3; \
-    ln -sf /usr/local/bin/pip3.12 /usr/local/bin/pip
-
-# ---- Environment config ----
-RUN set -euo pipefail; \
+    ln -sf /usr/local/bin/pip3.12 /usr/local/bin/pip; \
+    \
     printf 'export PATH="/usr/local/bin:$PATH"\n' \
       > /etc/profile.d/20-python.sh; \
     chmod 0644 /etc/profile.d/20-python.sh; \
