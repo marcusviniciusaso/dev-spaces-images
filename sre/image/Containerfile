@@ -1,38 +1,35 @@
 ARG SRE_IMAGE=quay.io/vflorent/devspaces-sre:0.8
 ARG BASE_IMAGE=quay.io/marolive/custom-udi:1.2.7
 
-# ---- Stage 1: SRE tools ----
+# ---- Stage 1: consolidate SRE filesystem into a single layer ----
 FROM ${SRE_IMAGE} AS sre-source
 
-# ---- Stage 2: Custom UDI ----
+RUN mkdir -p /tmp/sre-export; \
+    for d in usr/local/bin usr/local/lib usr/local/share \
+             usr/bin usr/lib64 usr/share \
+             opt etc/profile.d; do \
+      if [ -d "/$d" ]; then \
+        mkdir -p "/tmp/sre-export/$d"; \
+        cp -a "/$d/." "/tmp/sre-export/$d/" 2>/dev/null || true; \
+      fi; \
+    done
+
+# ---- Stage 2: merge SRE tools into custom-udi ----
 FROM ${BASE_IMAGE}
 
 USER 0
 
-# ---- Merge SRE tooling ----
-COPY --from=sre-source /usr/local/bin/ /tmp/sre-merge/usr-local-bin/
-COPY --from=sre-source /usr/local/lib/ /tmp/sre-merge/usr-local-lib/
-COPY --from=sre-source /usr/local/share/ /tmp/sre-merge/usr-local-share/
-COPY --from=sre-source /opt/ /tmp/sre-merge/opt/
-COPY --from=sre-source /etc/profile.d/ /tmp/sre-merge/profile.d/
+COPY --from=sre-source /tmp/sre-export/ /tmp/sre-merge/
 
 RUN set -euo pipefail; \
-    cp -a -n /tmp/sre-merge/usr-local-bin/* /usr/local/bin/ 2>/dev/null || true; \
-    cp -a -n /tmp/sre-merge/usr-local-lib/* /usr/local/lib/ 2>/dev/null || true; \
-    cp -a -n /tmp/sre-merge/usr-local-share/* /usr/local/share/ 2>/dev/null || true; \
-    cp -a -n /tmp/sre-merge/opt/* /opt/ 2>/dev/null || true; \
-    cp -a -n /tmp/sre-merge/profile.d/* /etc/profile.d/ 2>/dev/null || true; \
-    rm -rf /tmp/sre-merge
-
-# ---- Merge SRE system packages ----
-COPY --from=sre-source /usr/bin/ /tmp/sre-merge/usr-bin/
-COPY --from=sre-source /usr/lib64/ /tmp/sre-merge/usr-lib64/
-COPY --from=sre-source /usr/share/ /tmp/sre-merge/usr-share/
-
-RUN set -euo pipefail; \
-    cp -a -n /tmp/sre-merge/usr-bin/* /usr/bin/ 2>/dev/null || true; \
-    cp -a -n /tmp/sre-merge/usr-lib64/* /usr/lib64/ 2>/dev/null || true; \
-    cp -a -n /tmp/sre-merge/usr-share/* /usr/share/ 2>/dev/null || true; \
+    for d in usr/local/bin usr/local/lib usr/local/share \
+             usr/bin usr/lib64 usr/share \
+             opt etc/profile.d; do \
+      if [ -d "/tmp/sre-merge/$d" ]; then \
+        mkdir -p "/$d"; \
+        cp -a -n "/tmp/sre-merge/$d/." "/$d/" 2>/dev/null || true; \
+      fi; \
+    done; \
     rm -rf /tmp/sre-merge; \
     chown -R 10001:0 /home/user 2>/dev/null || true; \
     ldconfig 2>/dev/null || true
