@@ -37,7 +37,8 @@ RUN set -euo pipefail; \
   rm -f /tmp/node.tar.xz; \
   /opt/node/current/bin/npm install -g "npm@${NPM_VERSION_ARG}"; \
   /opt/node/current/bin/npm install -g "@nestjs/cli@${NESTJS_VERSION_ARG}"; \
-  chown -R 10001:0 /opt/node
+  chown -R 10001:0 /opt/node; \
+  rm -rf /home/user/.npm
 
 # ---- Environment config ----
 RUN set -euo pipefail; \
