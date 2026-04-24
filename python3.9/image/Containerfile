@@ -1,0 +1,41 @@
+ARG BASE_IMAGE=quay.io/marolive/custom-udi:1.2.7
+FROM ${BASE_IMAGE}
+
+USER 0
+
+# ---- Python 3.9 + pip tools + environment config ----
+RUN set -euo pipefail; \
+    PM="microdnf"; command -v microdnf >/dev/null 2>&1 || PM="dnf"; \
+    $PM install -y \
+      python3 \
+      python3-devel \
+      python3-pip; \
+    $PM clean all; \
+    rm -rf /home/user/.local/lib/python3.11 \
+           /home/user/.local/lib/python3.9 \
+           /home/user/.local/bin/pip* \
+           /home/user/.local/bin/virtualenv*; \
+    ln -sf /usr/bin/python3.9 /usr/local/bin/python3; \
+    ln -sf /usr/bin/python3.9 /usr/local/bin/python; \
+    ln -sf /usr/bin/pip3.9    /usr/local/bin/pip3; \
+    ln -sf /usr/bin/pip3.9    /usr/local/bin/pip; \
+    \
+    python3.9 -m pip install --no-cache-dir -U \
+      pip setuptools wheel virtualenv; \
+    ln -sf /usr/local/bin/pip3.9 /usr/local/bin/pip3; \
+    ln -sf /usr/local/bin/pip3.9 /usr/local/bin/pip; \
+    \
+    printf 'export PATH="/usr/local/bin:$PATH"\n' \
+      > /etc/profile.d/20-python.sh; \
+    chmod 0644 /etc/profile.d/20-python.sh; \
+    \
+    mkdir -p /home/user/.config/pip; \
+    printf '%s\n' \
+      '[global]' \
+      'index-url = NEXUS_PYPI_BASEURL_PLACEHOLDER' \
+      'trusted-host = NEXUS_TRUSTED_HOST_PLACEHOLDER' \
+      > /home/user/.config/pip/pip.conf; \
+    chmod 666 /home/user/.config/pip/pip.conf; \
+    chown -R 10001:0 /home/user/.config
+
+USER 10001
