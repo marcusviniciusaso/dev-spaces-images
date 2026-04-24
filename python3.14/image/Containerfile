@@ -1,0 +1,60 @@
+ARG BASE_IMAGE=quay.io/marolive/custom-udi:1.2.7
+FROM ${BASE_IMAGE}
+
+USER 0
+
+ARG PYTHON_FULL_VERSION=3.14.4
+
+# ---- Python 3.14 from source + pip tools + environment config ----
+RUN set -euo pipefail; \
+    PYVER="${PYTHON_FULL_VERSION}"; \
+    PM="microdnf"; command -v microdnf >/dev/null 2>&1 || PM="dnf"; \
+    \
+    $PM install -y --enablerepo=ubi-9-codeready-builder-rpms \
+      gcc gcc-c++ make \
+      openssl-devel bzip2-devel libffi-devel \
+      zlib-devel ncurses-devel sqlite-devel \
+      xz-devel tk-devel \
+      tar gzip findutils; \
+    \
+    curl -fsSL -o /tmp/Python-${PYVER}.tgz \
+      "https://www.python.org/ftp/python/${PYVER}/Python-${PYVER}.tgz"; \
+    tar -C /tmp -xzf /tmp/Python-${PYVER}.tgz; \
+    cd /tmp/Python-${PYVER}; \
+    ./configure --prefix=/usr/local \
+      --enable-shared \
+      --with-ensurepip=install \
+      LDFLAGS="-Wl,-rpath /usr/local/lib"; \
+    make -j"$(nproc)"; \
+    make altinstall; \
+    cd /; \
+    rm -rf /tmp/Python-${PYVER}*; \
+    \
+    $PM clean all; \
+    \
+    rm -rf /home/user/.local/lib/python3.11 \
+           /home/user/.local/lib/python3.9 \
+           /home/user/.local/bin/pip* \
+           /home/user/.local/bin/virtualenv*; \
+    ln -sf /usr/local/bin/python3.14 /usr/local/bin/python3; \
+    ln -sf /usr/local/bin/python3.14 /usr/local/bin/python; \
+    ln -sf /usr/local/bin/pip3.14    /usr/local/bin/pip3; \
+    ln -sf /usr/local/bin/pip3.14    /usr/local/bin/pip; \
+    \
+    /usr/local/bin/python3.14 -m pip install --no-cache-dir -U \
+      pip setuptools wheel virtualenv; \
+    \
+    printf 'export PATH="/usr/local/bin:$PATH"\n' \
+      > /etc/profile.d/20-python.sh; \
+    chmod 0644 /etc/profile.d/20-python.sh; \
+    \
+    mkdir -p /home/user/.config/pip; \
+    printf '%s\n' \
+      '[global]' \
+      'index-url = NEXUS_PYPI_BASEURL_PLACEHOLDER' \
+      'trusted-host = NEXUS_TRUSTED_HOST_PLACEHOLDER' \
+      > /home/user/.config/pip/pip.conf; \
+    chmod 666 /home/user/.config/pip/pip.conf; \
+    chown -R 10001:0 /home/user/.config
+
+USER 10001
