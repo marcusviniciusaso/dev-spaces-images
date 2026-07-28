@@ -1,0 +1,102 @@
+ARG BASE_IMAGE=quay.io/marolive/custom-udi:3.0.0
+FROM ${BASE_IMAGE}
+
+USER 0
+
+# Workaround for DevSpaces init that may try to recreate an existing config dir.
+RUN cat > /usr/local/bin/mkdir <<'EOF' && chmod 755 /usr/local/bin/mkdir
+#!/usr/bin/env bash
+if [ "$#" -eq 1 ] && [ "$1" = "/home/tooling/.config" ] && [ -d "$1" ]; then
+    exit 0
+fi
+exec /usr/bin/mkdir "$@"
+EOF
+
+# =========================
+# ENV
+# =========================
+ENV HOME=/home/tooling \
+    HOME2=/home/tooling \
+    PYTHON_ROOT=/opt/python \
+    PYTHON_STATE_DIR=/home/user/.python \
+    PATH=/usr/local/bin:$PATH
+
+
+RUN mkdir -p $PYTHON_ROOT/versions $PYTHON_STATE_DIR && \
+    touch $PYTHON_STATE_DIR/current && \
+    chown -R 10001:0 $PYTHON_STATE_DIR && \
+    chmod -R g+rwX $PYTHON_STATE_DIR && \
+    chmod -R a+rX $PYTHON_ROOT
+
+# COPY devspaces-linux-release /etc
+# COPY .bash_aliases $HOME2
+# COPY devspaces-setup.sh $HOME2
+# COPY devspaces-environment.sh $HOME2
+# COPY .bashrc $HOME2
+# =========================
+# COPY SOURCES (SOURCE CODE)
+# =========================
+COPY scripts/Python-3.9.18.tgz /tmp/
+COPY scripts/Python-3.12.3.tgz /tmp/
+COPY scripts/Python-3.13.0.tgz /tmp/
+COPY scripts/Python-3.14.0.tgz /tmp/
+
+# =========================
+# BUILD FUNCTION
+# =========================
+RUN set -ex && \
+for v in 3.9.18 3.12.3 3.13.0 3.14.0; do \
+  echo "=== Building Python $v ==="; \
+  cd /tmp && \
+  tar -xzf Python-$v.tgz && \
+  cd Python-$v && \
+    ./configure --prefix=$PYTHON_ROOT/versions/$v --enable-optimizations && \
+  make -j$(nproc) && \
+  make install && \
+  cd / && rm -rf /tmp/Python-$v; \
+done
+
+# =========================
+# DEFAULT VERSION
+# =========================
+
+RUN echo "3.12.3" > $PYTHON_STATE_DIR/current && \
+    chown 10001:0 $PYTHON_STATE_DIR/current && \
+    chmod g+rw $PYTHON_STATE_DIR/current
+
+
+# =========================
+# WRAPPERS
+# =========================
+COPY scripts/python-wrapper.sh /usr/local/bin/python
+COPY scripts/pip-wrapper.sh /usr/local/bin/pip
+COPY scripts/pylist.sh /usr/local/bin/pylist
+COPY scripts/pyenv.sh /usr/local/bin/pyuse
+
+RUN chmod +x \
+    /usr/local/bin/python \
+    /usr/local/bin/pip \
+    /usr/local/bin/pylist \
+    /usr/local/bin/pyuse
+
+# =========================
+# FIX PATH / PRIORITY
+# =========================
+RUN echo 'export PATH=/usr/local/bin:$PATH' > /etc/profile.d/zzz-python.sh
+
+# remove conflitos de python3
+RUN rm -f /usr/bin/python3 /usr/local/bin/python3 || true
+
+# garante override total
+RUN ln -sf /usr/local/bin/python /usr/local/bin/python3 && \
+    ln -sf /usr/local/bin/python /usr/bin/python3 && \
+    ln -sf /usr/local/bin/pip /usr/local/bin/pip3
+
+# =========================
+# PERMISSIONS
+# =========================
+RUN chown -R 10001:0 /home/user/.python /home/tooling && \
+    chmod -R g=u /home/user/.python /home/tooling
+
+USER 10001
+WORKDIR /home/user
