@@ -16,6 +16,46 @@ set -e
 export USER_ID=$(id -u)
 export GROUP_ID=$(id -g)
 
+jdk_import_ca_bundle() {
+  CA_BUNDLE="${JDK_CA_BUNDLE:-/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem}"
+  KEYSTORE_PASSWORD="${JDK_KEYSTORE_PASSWORD:-changeit}"
+
+  if ! command -v keytool >/dev/null 2>&1; then
+    return
+  fi
+
+  if [ ! -f "$CA_BUNDLE" ]; then
+    echo "[jdk] Failed to import CA certificates from ${CA_BUNDLE}. File doesn't exist"
+    return
+  fi
+
+  bundle_name=$(basename "$CA_BUNDLE")
+  certs_imported=0
+  cert_index=0
+  tmp_file=/tmp/cert.pem
+  is_cert=false
+  echo "[jdk] Importing certificates..."
+  while IFS= read -r line; do
+    if [ "$line" = "-----BEGIN CERTIFICATE-----" ]; then
+      is_cert=true
+      cert_index=$((cert_index+1))
+      echo "$line" > ${tmp_file}
+    elif [ "$line" = "-----END CERTIFICATE-----" ]; then
+      is_cert=false
+      echo "$line" >> ${tmp_file}
+      if keytool -import -trustcacerts -cacerts -storepass "$KEYSTORE_PASSWORD" -noprompt -alias "${bundle_name}_${cert_index}" -file $tmp_file; then
+        certs_imported=$((certs_imported+1))
+      fi
+      certs_imported=$((certs_imported+1))
+    elif [ "$is_cert" = true ]; then
+      echo "$line" >> ${tmp_file}
+    fi
+  done < "$CA_BUNDLE"
+
+  echo "[jdk] Imported ${certs_imported} certificates from ${CA_BUNDLE}"
+  rm -f $tmp_file
+}
+
 if ! grep -Fq "${USER_ID}" /etc/passwd; then
     # current user is an arbitrary
     # user (its uid is not in the
@@ -30,6 +70,69 @@ if ! grep -Fq "${USER_ID}" /etc/passwd; then
     sed "s/\${GROUP_ID}/${GROUP_ID}/g" | \
     sed "s/\${HOME}/\/home\/user/g" > /etc/group
 fi
+
+# The user namespace is created when `UserNamespacesSupport` feature is enabled and `hostUsers` is set to false in Pod spec.
+# See for more details:
+# - https://kubernetes.io/docs/concepts/workloads/pods/user-namespaces/#introduction
+# Assume, that HOST_USERS environment variable is provided and is set to false in that case.
+# If so, update /etc/sub*id files to reflect the valid UID/GID range.
+if [ "${HOST_USERS}" == "false" ]; then
+  echo "Running in a user namespace"
+  if [ -f /proc/self/uid_map ]; then
+    # Typical output of `/proc/self/uid_map`:
+    # 1. When NOT running in a user namespace:
+    #         0          0 4294967295
+    # 2. When running in a user namespace:
+    #         0 1481179136      65536
+    # 3. When container is run in a user namespace:
+    #         0       1000          1
+    #         1       1001      64535
+    # We can use the content of /proc/self/uid_map to detect if we are running in a user namespace.
+    # However, to keep things simple, we will rely on HOST_USERS environment variable only.
+    # This way, we avoid breaking anything.
+    echo "/proc/self/uid_map content: $(cat /proc/self/uid_map)"
+  fi
+
+  # Why do we need to update /etc/sub*id files?
+  # We are already in the user namespace, so we know there are at least 65536 UIDs/GIDs available.
+  # For more details, see:
+  # - https://kubernetes.io/docs/concepts/workloads/pods/user-namespaces/#id-count-for-each-of-pods
+  # Podman needs to create a new user namespace for any container being launched and map the container's user
+  # and group IDs (UID/GID) to the corresponding user on the current namespace.
+  # For the mapping, podman refers to the /etc/sub*id files.
+  # For more details, see:
+  # - https://man7.org/linux/man-pages/man5/subuid.5.html
+  # So if the user ID exceeds 65535, it cannot be mapped if only UIDs/GIDs from 0-65535 are available.
+  # If that's the case, podman commands would fail.
+
+  # Even though the range can be extended using configuration, we can rely on the fact that there are at least 65536 user IDs available in the user namespace.
+  # See for more details:
+  # - https://kubernetes.io/docs/reference/config-api/kubelet-config.v1beta1/#kubelet-config-k8s-io-v1beta1-UserNamespaces
+
+  # To ensure the provided user ID stays within this range, `runAsUser` in the Pod spec should be set to a value below 65536.
+  # In OpenShift, the Container Security Context Constraint (SCC) should be created accordingly.
+  if whoami &> /dev/null; then
+    echo "User information: $(id)"
+
+    USER_ID=$(id -u)
+    if [ ${USER_ID} -lt 65536 ]; then
+      USER_NAME=$(whoami)
+      START_ID=$(( ${USER_ID} + 1 ))
+      COUNT=$(( 65536 - ${START_ID} ))
+      IDS_RANGE="${USER_NAME}:${START_ID}:${COUNT}"
+
+      if [ -w /etc/subuid ]; then
+        echo "${IDS_RANGE}" > /etc/subuid
+        echo "/etc/subuid updated"
+      fi
+      if [ -w /etc/subgid ]; then
+        echo "${IDS_RANGE}" > /etc/subgid
+        echo "/etc/subgid updated"
+      fi
+    fi
+  fi
+fi
+
 
 #############################################################################
 # Grant access to projects volume in case of non root user with sudo rights
@@ -50,9 +153,9 @@ fi
 #############################################################################
 rm -rf /home/tooling/.java/current
 mkdir -p /home/tooling/.java/current
-if [ "${USE_JAVA8}" == "true" ] && [ ! -z "${JAVA_HOME_8}" ]; then
-  ln -s "${JAVA_HOME_8}"/* /home/tooling/.java/current
-  echo "Java environment set to ${JAVA_HOME_8}"
+if [ "${USE_JAVA17}" == "true" ] && [ ! -z "${JAVA_HOME_17}" ]; then
+  ln -s "${JAVA_HOME_17}"/* /home/tooling/.java/current
+  echo "Java environment set to ${JAVA_HOME_17}"
 elif [ "${USE_JAVA11}" == "true" ] && [ ! -z "${JAVA_HOME_11}" ]; then
   ln -s "${JAVA_HOME_11}"/* /home/tooling/.java/current
   echo "Java environment set to ${JAVA_HOME_11}"
@@ -60,8 +163,8 @@ elif [ "${USE_JAVA21}" == "true" ] && [ ! -z "${JAVA_HOME_21}" ]; then
   ln -s "${JAVA_HOME_21}"/* /home/tooling/.java/current
   echo "Java environment set to ${JAVA_HOME_21}"
 else
-  ln -s "${JAVA_HOME_17}"/* /home/tooling/.java/current
-  echo "Java environment set to ${JAVA_HOME_17}"
+  ln -s "${JAVA_HOME_25}"/* /home/tooling/.java/current
+  echo "Java environment set to ${JAVA_HOME_25}"
 fi
 
 if [[ ! -z "${PLUGIN_REMOTE_ENDPOINT_EXECUTABLE}" ]]; then
@@ -77,7 +180,7 @@ if [[ "${KUBEDOCK_ENABLED:-false}" == "true" ]]; then
     echo "Kubedock is enabled (env variable KUBEDOCK_ENABLED is set to true)."
 
     SECONDS=0
-    KUBEDOCK_TIMEOUT=${KUBEDOCK_TIMEOUT:-60}
+    KUBEDOCK_TIMEOUT=${KUBEDOCK_TIMEOUT:-10}
     until [ -f $KUBECONFIG ]; do
         if (( SECONDS > KUBEDOCK_TIMEOUT )); then
             break
@@ -173,13 +276,89 @@ if [ $HOME_USER_MOUNTED -eq 0 ] && [ ! -f $STOW_COMPLETE ]; then
     #
     # Create symbolic links from /home/tooling/ -> /home/user/
     stow . -t /home/user/ -d /home/tooling/ --no-folding -v 2 > /tmp/stow.log 2>&1
-    # Vim does not permit .viminfo to be a symbolic link for security reasons, so manually copy it
-    cp --no-clobber /home/tooling/.viminfo /home/user/.viminfo
-    # We have to restore bash-related files back onto /home/user/ (since they will have been overwritten by the PVC)
-    # but we don't want them to be symbolic links (so that they persist on the PVC)
-    cp --no-clobber /home/tooling/.bashrc /home/user/.bashrc
-    cp --no-clobber /home/tooling/.bash_profile /home/user/.bash_profile
+
     touch $STOW_COMPLETE
 fi
+
+# Read .copy-files and copy files from /home/tooling to /home/user
+if [ -f "/home/tooling/.copy-files" ]; then
+    echo "Processing .copy-files..."
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        # Skip empty and commented lines
+        [[ -z "$line" || "$line" == \#* ]] && continue
+
+        if [ -e "/home/tooling/$line" ]; then
+            tooling_path=$(realpath "/home/tooling/$line")
+            
+            # Determine target path based on whether source is a directory
+            if [ -d "$tooling_path" ]; then
+                # For directories: copy to parent directory (e.g., dir1/dir2 -> /home/user/dir1/)
+                target_parent=$(dirname "/home/user/$line")
+                target_full="$target_parent/$(basename "$tooling_path")"
+                
+                # Skip if target directory already exists
+                if [ -d "$target_full" ]; then
+                    echo "Directory $target_full already exists, skipping..."
+                    continue
+                fi
+                
+                echo "Copying directory $tooling_path to $target_parent/"
+                mkdir -p "$target_parent"
+                cp --no-clobber -r "$tooling_path" "$target_parent/"
+            else
+                # For files: copy to exact target path
+                target_full="/home/user/$line"
+                target_parent=$(dirname "$target_full")
+
+                # Skip if target file already exists
+                if [ -e "$target_full" ]; then
+                    echo "File $target_full already exists, skipping..."
+                    continue
+                fi
+                
+                echo "Copying file $tooling_path to $target_full"
+                mkdir -p "$target_parent"
+                cp --no-clobber -r "$tooling_path" "$target_full"
+            fi
+        else
+            echo "Warning: /home/tooling/$line does not exist, skipping..."
+        fi
+    done < /home/tooling/.copy-files
+    echo "Finished processing .copy-files."
+else
+    echo "No .copy-files found, skipping copy operation."
+fi
+
+# Create symlinks from /home/tooling/.config to /home/user/.config
+# Only create symlinks for files that don't already exist in destination.
+# This is done because stow ignores the .config directory.
+if [ -d /home/tooling/.config ]; then
+    echo "Creating .config symlinks for files that don't already exist..."
+    
+    # Find all files recursively in /home/tooling/.config
+    find /home/tooling/.config -type f | while read -r file; do
+        # Get the relative path from /home/tooling/.config
+        relative_path="${file#/home/tooling/.config/}"
+        
+        # Determine target path in /home/user/.config
+        target_file="${HOME}/.config/${relative_path}"
+        target_dir=$(dirname "$target_file")
+        
+        # Only create symlink if target file doesn't exist
+        if [ ! -e "$target_file" ]; then
+            # Create target directory if it doesn't exist
+            mkdir -p "$target_dir"
+            # Create symbolic link
+            ln -s "$file" "$target_file"
+            echo "Created symlink: $target_file -> $file"
+        else
+            echo "File $target_file already exists, skipping..."
+        fi
+    done
+    
+    echo "Finished creating .config symlinks."
+fi
+
+jdk_import_ca_bundle &
 
 exec "$@"

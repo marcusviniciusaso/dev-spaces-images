@@ -1,10 +1,10 @@
-ARG UDI_IMAGE=registry.redhat.io/devspaces/udi-rhel9:3.22
+ARG UDI_IMAGE=registry.redhat.io/devspaces/udi-rhel9:3.28.2-1780929707
 
 FROM ${UDI_IMAGE}
 
 USER 0
 
-ARG OCP_VERSION=4.18.24
+ARG OCP_VERSION=4.20.27
 ARG HELM_VERSION=v3.16.2
 ARG KIND_VERSION=v0.26.0
 
@@ -24,7 +24,7 @@ RUN set -euo pipefail; \
     echo "$arch" > /tmp/ARCH; \
     \
     PM="microdnf"; command -v microdnf >/dev/null 2>&1 || PM="dnf"; \
-    REQUIRED="gnupg2 ca-certificates unzip zip jq git tree bash-completion iputils vim-enhanced"; \
+    REQUIRED="gnupg2 ca-certificates unzip zip jq git tree bash-completion iputils vim-enhanced shadow-utils"; \
     $PM install -y $REQUIRED; \
     if $PM install -y traceroute; then \
         echo "traceroute instalado"; \
@@ -83,7 +83,7 @@ RUN set -euo pipefail; \
     arch="$(cat /tmp/ARCH)"; \
     \
     curl -fsSL -o /tmp/ocp-client.tar.gz \
-      "https://mirror.openshift.com/pub/openshift-v4/clients/ocp/stable-4.18/openshift-client-linux.tar.gz"; \
+      "https://mirror.openshift.com/pub/openshift-v4/clients/ocp/stable-4.20/openshift-client-linux.tar.gz"; \
     tar -C /tmp -xzf /tmp/ocp-client.tar.gz; \
     install -m 0755 /tmp/oc /usr/local/bin/oc; \
     if [ -f /tmp/kubectl ]; then install -m 0755 /tmp/kubectl /usr/local/bin/kubectl; fi; \
@@ -125,9 +125,9 @@ RUN set -euo pipefail; \
 COPY --chmod=0644 scripts/release-notes.yaml /etc/devspaces-linux-release
 
 LABEL org.opencontainers.image.title="Dev Spaces Custom UDI" \
-      org.opencontainers.image.description="UDI customizada para Dev Spaces 3.22" \
+      org.opencontainers.image.description="UDI customizada para Dev Spaces 3.28" \
       org.opencontainers.image.source="https://github.com/marcusviniciusaso/custom-udi" \
       org.opencontainers.image.vendor="Red Hat (sample)" \
-      org.opencontainers.image.version="1.2.7"
+      org.opencontainers.image.version="3.0.0"
 
 USER 10001
