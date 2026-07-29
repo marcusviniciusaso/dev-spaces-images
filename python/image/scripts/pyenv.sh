@@ -59,7 +59,18 @@ resolve_current_file() {
 }
 
 show_help() {
-  echo "Uso: pyuse <3.9|3.12|3.13|3.14>"
+  local vdir="$(resolve_versions_dir)"
+  echo "Uso: pyuse <major.minor>"
+  if [ -n "$vdir" ] && [ -d "$vdir" ]; then
+    echo ""
+    echo "Versões disponíveis:"
+    for d in "$vdir"/*/; do
+      [ -d "$d" ] || continue
+      local v="$(basename "$d")"
+      local short="${v%.*}"
+      echo "  $short  ($v)"
+    done
+  fi
 }
 
 TARGET="${1:-}"
@@ -80,25 +91,22 @@ fi
 CURRENT_DIR="$(dirname "$CURRENT_FILE")"
 mkdir -p "$CURRENT_DIR"
 
-case "$TARGET" in
-  3.9)
-    NEW_VERSION="3.9.18"
-    ;;
-  3.12)
-    NEW_VERSION="3.12.3"
-    ;;
-  3.13)
-    NEW_VERSION="3.13.0"
-    ;;
-  3.14)
-    NEW_VERSION="3.14.0"
-    ;;
-  *)
-    echo "Versão inválida: $TARGET"
-    show_help
-    exit 1
-    ;;
-esac
+NEW_VERSION=""
+for d in "$VERSIONS_DIR"/*/; do
+  [ -d "$d" ] || continue
+  v="$(basename "$d")"
+  short="${v%.*}"
+  if [ "$short" = "$TARGET" ]; then
+    NEW_VERSION="$v"
+    break
+  fi
+done
+
+if [ -z "$NEW_VERSION" ]; then
+  echo "Versão inválida: $TARGET"
+  show_help
+  exit 1
+fi
 
 if [ ! -x "$VERSIONS_DIR/$NEW_VERSION/bin/python3" ]; then
   echo "Versão não instalada nesta imagem: $NEW_VERSION"

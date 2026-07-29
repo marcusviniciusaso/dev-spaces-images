@@ -28,39 +28,63 @@ RUN mkdir -p $PYTHON_ROOT/versions $PYTHON_STATE_DIR && \
     chmod -R g+rwX $PYTHON_STATE_DIR && \
     chmod -R a+rX $PYTHON_ROOT
 
-# COPY devspaces-linux-release /etc
-# COPY .bash_aliases $HOME2
-# COPY devspaces-setup.sh $HOME2
-# COPY devspaces-environment.sh $HOME2
-# COPY .bashrc $HOME2
-# =========================
-# COPY SOURCES (SOURCE CODE)
-# =========================
-COPY scripts/Python-3.9.18.tgz /tmp/
-COPY scripts/Python-3.12.3.tgz /tmp/
-COPY scripts/Python-3.13.0.tgz /tmp/
-COPY scripts/Python-3.14.0.tgz /tmp/
+COPY scripts/.bashrc $HOME2/.bashrc
 
 # =========================
-# BUILD FUNCTION
+# PYTHON VIA DNF (3.9, 3.12)
 # =========================
-RUN set -ex && \
-for v in 3.9.18 3.12.3 3.13.0 3.14.0; do \
-  echo "=== Building Python $v ==="; \
-  cd /tmp && \
-  tar -xzf Python-$v.tgz && \
-  cd Python-$v && \
-    ./configure --prefix=$PYTHON_ROOT/versions/$v --enable-optimizations && \
-  make -j$(nproc) && \
-  make install && \
-  cd / && rm -rf /tmp/Python-$v; \
-done
+RUN set -euo pipefail; \
+    PM="microdnf"; command -v microdnf >/dev/null 2>&1 || PM="dnf"; \
+    $PM install -y \
+      python3 python3-devel python3-pip \
+      python3.12 python3.12-devel python3.12-pip; \
+    $PM clean all; \
+    \
+    for pybin in python3.9 python3.12; do \
+      FULL_VER=$($pybin -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')"); \
+      MINOR=$($pybin -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"); \
+      mkdir -p $PYTHON_ROOT/versions/$FULL_VER/bin; \
+      ln -sf /usr/bin/python${MINOR} $PYTHON_ROOT/versions/$FULL_VER/bin/python3; \
+      ln -sf /usr/bin/pip${MINOR}    $PYTHON_ROOT/versions/$FULL_VER/bin/pip3; \
+      echo "=== Python $FULL_VER (dnf) registrado ==="; \
+    done
 
 # =========================
-# DEFAULT VERSION
+# PYTHON FROM SOURCE (3.13, 3.14)
 # =========================
+ARG PYTHON_3_13_VERSION=3.13.13
+ARG PYTHON_3_14_VERSION=3.14.4
 
-RUN echo "3.12.3" > $PYTHON_STATE_DIR/current && \
+RUN set -euo pipefail; \
+    PM="microdnf"; command -v microdnf >/dev/null 2>&1 || PM="dnf"; \
+    $PM install -y --enablerepo=ubi-9-codeready-builder-rpms \
+      gcc gcc-c++ make \
+      openssl-devel bzip2-devel libffi-devel \
+      zlib-devel ncurses-devel sqlite-devel \
+      xz-devel tk-devel \
+      tar gzip findutils; \
+    $PM clean all; \
+    \
+    for PYVER in ${PYTHON_3_13_VERSION} ${PYTHON_3_14_VERSION}; do \
+      echo "=== Building Python $PYVER from source ==="; \
+      curl -fsSL -o /tmp/Python-${PYVER}.tgz \
+        "https://www.python.org/ftp/python/${PYVER}/Python-${PYVER}.tgz"; \
+      tar -C /tmp -xzf /tmp/Python-${PYVER}.tgz; \
+      cd /tmp/Python-${PYVER}; \
+      ./configure --prefix=$PYTHON_ROOT/versions/$PYVER \
+        --enable-shared \
+        --with-ensurepip=install \
+        LDFLAGS="-Wl,-rpath,$PYTHON_ROOT/versions/$PYVER/lib"; \
+      make -j"$(nproc)"; \
+      make install; \
+      cd / && rm -rf /tmp/Python-${PYVER}*; \
+    done
+
+# =========================
+# DEFAULT VERSION (3.12)
+# =========================
+RUN FULL_VER=$(python3.12 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')"); \
+    echo "$FULL_VER" > $PYTHON_STATE_DIR/current && \
     chown 10001:0 $PYTHON_STATE_DIR/current && \
     chmod g+rw $PYTHON_STATE_DIR/current
 
@@ -79,6 +103,10 @@ RUN chmod +x \
     /usr/local/bin/pylist \
     /usr/local/bin/pyuse
 
+RUN FULL_VER=$(python3.12 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')"); \
+    sed -i "s/DEFAULT_VERSION=\".*\"/DEFAULT_VERSION=\"$FULL_VER\"/" \
+      /usr/local/bin/python /usr/local/bin/pip
+
 # =========================
 # FIX PATH / PRIORITY
 # =========================
@@ -91,6 +119,19 @@ RUN rm -f /usr/bin/python3 /usr/local/bin/python3 || true
 RUN ln -sf /usr/local/bin/python /usr/local/bin/python3 && \
     ln -sf /usr/local/bin/python /usr/bin/python3 && \
     ln -sf /usr/local/bin/pip /usr/local/bin/pip3
+
+# =========================
+# PIP CONFIG (Nexus proxy)
+# =========================
+RUN mkdir -p /home/user/.config/pip && \
+    printf '%s\n' \
+      '[global]' \
+      'index-url = NEXUS_PYPI_BASEURL_PLACEHOLDER' \
+      'trusted-host = NEXUS_TRUSTED_HOST_PLACEHOLDER' \
+      'timeout = 60' \
+      > /home/user/.config/pip/pip.conf && \
+    chmod 664 /home/user/.config/pip/pip.conf && \
+    chown -R 10001:0 /home/user/.config
 
 # =========================
 # PERMISSIONS

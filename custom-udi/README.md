@@ -20,6 +20,7 @@ podman run --rm -it quay.io/${QUAY_ORG}/${IMAGE_NAME}:${IMAGE_TAG} bash -lc '
   kind version
   cekit --version || true
   podman version
+  podman-compose version
 '
 ```
 

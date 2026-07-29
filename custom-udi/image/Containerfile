@@ -100,7 +100,7 @@ RUN set -euo pipefail; \
     chmod 0755 /usr/local/bin/kind; \
     \
     if command -v pip3 >/dev/null 2>&1; then \
-      pip3 install --no-cache-dir -U cekit; \
+      pip3 install --no-cache-dir -U cekit podman-compose; \
     else \
       echo "pip3 não encontrado; instale python3-pip" && exit 1; \
     fi; \
@@ -128,6 +128,6 @@ LABEL org.opencontainers.image.title="Dev Spaces Custom UDI" \
       org.opencontainers.image.description="UDI customizada para Dev Spaces 3.28" \
       org.opencontainers.image.source="https://github.com/marcusviniciusaso/custom-udi" \
       org.opencontainers.image.vendor="Red Hat (sample)" \
-      org.opencontainers.image.version="3.0.0"
+      org.opencontainers.image.version="3.0.2"
 
 USER 10001
