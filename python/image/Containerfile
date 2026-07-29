@@ -1,4 +1,4 @@
-ARG BASE_IMAGE=quay.io/marolive/custom-udi:3.0.0
+ARG BASE_IMAGE=quay.io/marolive/custom-udi:3.0.2
 FROM ${BASE_IMAGE}
 
 USER 0
@@ -28,7 +28,16 @@ RUN mkdir -p $PYTHON_ROOT/versions $PYTHON_STATE_DIR && \
     chmod -R g+rwX $PYTHON_STATE_DIR && \
     chmod -R a+rX $PYTHON_ROOT
 
-COPY scripts/.bashrc $HOME2/.bashrc
+COPY scripts/devspaces-linux-release /etc
+COPY scripts/.bash_aliases $HOME2
+COPY --chmod=755 scripts/devspaces-setup.sh $HOME2
+COPY --chmod=755 scripts/devspaces-environment.sh $HOME2
+COPY scripts/.bashrc $HOME2
+
+# Ensure entrypoint can find passwd/group templates regardless of HOME override
+RUN cp -a /home/tooling/passwd.template /home/user/passwd.template 2>/dev/null || true && \
+    cp -a /home/tooling/group.template   /home/user/group.template   2>/dev/null || true && \
+    chown 10001:0 /home/user/passwd.template /home/user/group.template 2>/dev/null || true
 
 # =========================
 # PYTHON VIA DNF (3.9, 3.12)
