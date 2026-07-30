@@ -1,7 +1,7 @@
 devspaces_distro:
   type: base
-  version: "3.0.2"
-  release_date: "2026-07-29"
+  version: "3.0.3"
+  release_date: "2026-07-30"
   
 os:
   name: "Red Hat Enterprise Linux"
