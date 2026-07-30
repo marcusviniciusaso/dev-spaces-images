@@ -24,6 +24,15 @@ fi
 mkdir -p "$XDG_RUNTIME_DIR" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME"
 chmod 700 "$XDG_RUNTIME_DIR" 2>/dev/null || true
 
+# Fix ownership for Podman rootless when OpenShift assigns arbitrary UID
+_CURRENT_UID=$(id -u)
+for _xdg_dir in "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME"; do
+    if [ -d "$_xdg_dir" ] && [ "$(stat -c '%u' "$_xdg_dir" 2>/dev/null)" != "$_CURRENT_UID" ]; then
+        chown -R "$_CURRENT_UID:0" "$_xdg_dir" 2>/dev/null || true
+    fi
+done
+unset _CURRENT_UID _xdg_dir
+
 # Rootless Podman in DevSpaces often cannot mount overlay; use vfs in persistent user storage.
 export CONTAINERS_STORAGE_CONF="${CONTAINERS_STORAGE_CONF:-$XDG_CONFIG_HOME/containers/storage.conf}"
 PODMAN_RUNROOT="/tmp/containers-$(id -u)/runroot"

@@ -140,13 +140,14 @@ RUN mkdir -p /home/user/.config/pip && \
       'timeout = 60' \
       > /home/user/.config/pip/pip.conf && \
     chmod 664 /home/user/.config/pip/pip.conf && \
-    chown -R 10001:0 /home/user/.config
+    chown -R 10001:0 /home/user/.config && \
+    chmod -R g+rwX /home/user/.config
 
 # =========================
 # PERMISSIONS
 # =========================
-RUN chown -R 10001:0 /home/user/.python /home/tooling && \
-    chmod -R g=u /home/user/.python /home/tooling
+RUN chown -R 10001:0 /home/user/.python /home/tooling /home/user/.config && \
+    chmod -R g=u /home/user/.python /home/tooling /home/user/.config
 
 USER 10001
 WORKDIR /home/user
