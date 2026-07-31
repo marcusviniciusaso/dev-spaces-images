@@ -9,8 +9,8 @@ ARG HELM_VERSION=v3.16.2
 ARG KIND_VERSION=v0.26.0
 
 COPY --chown=user:root --chmod=755 scripts/entrypoint.sh /entrypoint.sh
+COPY --chmod=0644 scripts/release-notes.yaml /etc/devspaces-linux-release
 
-# ---- System setup: arch detection + packages + fallbacks ----
 RUN set -euo pipefail; \
     arch="${TARGETARCH:-}"; \
     if [ -z "$arch" ]; then \
@@ -21,7 +21,6 @@ RUN set -euo pipefail; \
         *) echo "Unsupported arch: $uarch" && exit 1 ;; \
       esac; \
     fi; \
-    echo "$arch" > /tmp/ARCH; \
     \
     PM="microdnf"; command -v microdnf >/dev/null 2>&1 || PM="dnf"; \
     REQUIRED="gnupg2 ca-certificates unzip zip jq git tree bash-completion iputils vim-enhanced shadow-utils"; \
@@ -31,56 +30,17 @@ RUN set -euo pipefail; \
     else \
         echo "traceroute não encontrado, usar fallback (tracepath)"; \
     fi; \
-    $PM clean all; \
     \
-    if ! command -v traceroute >/dev/null 2>&1; then \
-        echo "Wrapper para traceroute..."; \
-        printf '#!/bin/bash\n' > /usr/local/bin/traceroute; \
-        printf 'echo "[WARN] traceroute não disponível. Usando tracepath." >&2\n' >> /usr/local/bin/traceroute; \
-        printf 'exec tracepath "${1:-8.8.8.8}"\n' >> /usr/local/bin/traceroute; \
-        chmod +x /usr/local/bin/traceroute; \
-    fi; \
-    \
-    if ! command -v lsb_release >/dev/null 2>&1; then \
-        echo "Script lsb_release customizado..."; \
-        printf '#!/bin/bash\n' > /usr/local/bin/lsb_release; \
-        printf 'source /etc/os-release\n' >> /usr/local/bin/lsb_release; \
-        printf 'case "${1:-}" in\n' >> /usr/local/bin/lsb_release; \
-        printf '  -a|"") echo "Distributor ID:\t${ID}"; echo "Description:\t${PRETTY_NAME}"; echo "Release:\t${VERSION_ID}"; echo "Codename:\t${VERSION_CODENAME:-}";;\n' >> /usr/local/bin/lsb_release; \
-        printf '  -si) echo "${ID}" ;;\n' >> /usr/local/bin/lsb_release; \
-        printf '  -sr) echo "${VERSION_ID}" ;;\n' >> /usr/local/bin/lsb_release; \
-        printf '  -sd) echo "${PRETTY_NAME}" ;;\n' >> /usr/local/bin/lsb_release; \
-        printf '  *) echo "Uso: lsb_release [-a|-si|-sr|-sd]" >&2; exit 2 ;;\n' >> /usr/local/bin/lsb_release; \
-        printf 'esac\n' >> /usr/local/bin/lsb_release; \
-        chmod +x /usr/local/bin/lsb_release; \
-    fi; \
-    \
-    if ! command -v code >/dev/null 2>&1; then \
-        echo "Script wrapper para o comando code..."; \
-        printf '#!/bin/bash\n' > /usr/local/bin/code; \
-        printf 'if command -v code-oss >/dev/null 2>&1; then\n' >> /usr/local/bin/code; \
-        printf '    exec code-oss "$@"\n' >> /usr/local/bin/code; \
-        printf 'else\n' >> /usr/local/bin/code; \
-        printf '    echo "[ERRO] CLI do VS Code (code-oss) não encontrada." >&2\n' >> /usr/local/bin/code; \
-        printf '    exit 1\n' >> /usr/local/bin/code; \
-        printf 'fi\n' >> /usr/local/bin/code; \
-        chmod +x /usr/local/bin/code; \
-    fi
-
-# ---- Azure CLI ----
-RUN set -euo pipefail; \
     rpm --import https://packages.microsoft.com/keys/microsoft.asc; \
-    if command -v dnf >/dev/null 2>&1; then \
-      dnf install -y https://packages.microsoft.com/config/rhel/9.0/packages-microsoft-prod.rpm; \
-      dnf install -y azure-cli; \
-      dnf clean all; \
-    else \
-      echo "dnf não encontrado; instale azure-cli manualmente." && exit 1; \
-    fi
-
-# ---- CLI tools + CEKit + bash completions + nexus repo ----
-RUN set -euo pipefail; \
-    arch="$(cat /tmp/ARCH)"; \
+    dnf install -y https://packages.microsoft.com/config/rhel/9.0/packages-microsoft-prod.rpm; \
+    dnf install -y azure-cli; \
+    \
+    dnf install -y 'dnf-command(config-manager)'; \
+    dnf config-manager --add-repo https://cli.github.com/packages/rpm/gh-cli.repo; \
+    dnf install -y gh --repo gh-cli; \
+    \
+    dnf clean all; \
+    rm -rf /var/cache/dnf /var/cache/yum; \
     \
     curl -fsSL -o /tmp/ocp-client.tar.gz \
       "https://mirror.openshift.com/pub/openshift-v4/clients/ocp/stable-4.20/openshift-client-linux.tar.gz"; \
@@ -99,16 +59,30 @@ RUN set -euo pipefail; \
       "https://kind.sigs.k8s.io/dl/${KIND_VERSION}/kind-linux-${arch}"; \
     chmod 0755 /usr/local/bin/kind; \
     \
-    if command -v pip3 >/dev/null 2>&1; then \
-      pip3 install --no-cache-dir -U cekit podman-compose; \
-    else \
-      echo "pip3 não encontrado; instale python3-pip" && exit 1; \
-    fi; \
+    pip3 install --no-cache-dir -U cekit podman-compose; \
+    \
+    curl -fsSL https://gh.io/copilot-install | bash; \
     \
     mkdir -p /etc/bash_completion.d; \
     (kubectl completion bash > /etc/bash_completion.d/kubectl || true); \
     (oc completion bash > /etc/bash_completion.d/oc || true); \
     (helm completion bash > /etc/bash_completion.d/helm || true); \
+    gh completion -s bash > /etc/bash_completion.d/gh; \
+    \
+    if ! command -v traceroute >/dev/null 2>&1; then \
+        printf '#!/bin/bash\nexec tracepath "${1:-8.8.8.8}"\n' > /usr/local/bin/traceroute; \
+        chmod +x /usr/local/bin/traceroute; \
+    fi; \
+    \
+    if ! command -v lsb_release >/dev/null 2>&1; then \
+        printf '#!/bin/bash\nsource /etc/os-release\ncase "${1:-}" in\n  -a|"") echo "Distributor ID:\t${ID}"; echo "Description:\t${PRETTY_NAME}"; echo "Release:\t${VERSION_ID}"; echo "Codename:\t${VERSION_CODENAME:-}";;\n  -si) echo "${ID}" ;;\n  -sr) echo "${VERSION_ID}" ;;\n  -sd) echo "${PRETTY_NAME}" ;;\n  *) echo "Uso: lsb_release [-a|-si|-sr|-sd]" >&2; exit 2 ;;\nesac\n' > /usr/local/bin/lsb_release; \
+        chmod +x /usr/local/bin/lsb_release; \
+    fi; \
+    \
+    if ! command -v code >/dev/null 2>&1; then \
+        printf '#!/bin/bash\nif command -v code-oss >/dev/null 2>&1; then\n    exec code-oss "$@"\nelse\n    echo "[ERRO] CLI do VS Code (code-oss) não encontrada." >&2\n    exit 1\nfi\n' > /usr/local/bin/code; \
+        chmod +x /usr/local/bin/code; \
+    fi; \
     \
     printf '%s\n' \
       '[nexus-interno]' \
@@ -119,28 +93,14 @@ RUN set -euo pipefail; \
       'sslverify=0' \
       'priority=1' \
       > /etc/yum.repos.d/nexus-repo; \
-    chmod 666 /etc/yum.repos.d/nexus-repo
-
-# ---- GitHub CLI ----
-RUN set -euo pipefail; \
-    dnf install -y 'dnf-command(config-manager)'; \
-    dnf config-manager --add-repo https://cli.github.com/packages/rpm/gh-cli.repo; \
-    dnf install -y gh --repo gh-cli; \
-    dnf clean all; \
-    gh completion -s bash > /etc/bash_completion.d/gh
-
-# ---- GitHub Copilot CLI ----
-RUN set -euo pipefail; \
-    curl -fsSL https://gh.io/copilot-install | bash; \
-    copilot --version
-
-# ---- nota de versao ----
-COPY --chmod=0644 scripts/release-notes.yaml /etc/devspaces-linux-release
+    chmod 666 /etc/yum.repos.d/nexus-repo; \
+    \
+    rm -rf /tmp/* /var/tmp/* /root/.cache
 
 LABEL org.opencontainers.image.title="Dev Spaces Custom UDI" \
       org.opencontainers.image.description="UDI customizada para Dev Spaces 3.28" \
       org.opencontainers.image.source="https://github.com/marcusviniciusaso/custom-udi" \
       org.opencontainers.image.vendor="Red Hat (sample)" \
-      org.opencontainers.image.version="3.0.3"
+      org.opencontainers.image.version="3.0.5"
 
 USER 10001

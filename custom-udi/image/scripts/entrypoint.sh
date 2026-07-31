@@ -163,8 +163,18 @@ elif [ "${USE_JAVA21}" == "true" ] && [ ! -z "${JAVA_HOME_21}" ]; then
   ln -s "${JAVA_HOME_21}"/* /home/tooling/.java/current
   echo "Java environment set to ${JAVA_HOME_21}"
 else
-  ln -s "${JAVA_HOME_25}"/* /home/tooling/.java/current
-  echo "Java environment set to ${JAVA_HOME_25}"
+  if [ ! -z "${JAVA_HOME_25}" ]; then
+    ln -s "${JAVA_HOME_25}"/* /home/tooling/.java/current
+    echo "Java environment set to ${JAVA_HOME_25}"
+  elif [ ! -z "${JAVA_HOME_21}" ]; then
+    ln -s "${JAVA_HOME_21}"/* /home/tooling/.java/current
+    echo "Java environment set to ${JAVA_HOME_21} (fallback)"
+  elif [ ! -z "${JAVA_HOME_17}" ]; then
+    ln -s "${JAVA_HOME_17}"/* /home/tooling/.java/current
+    echo "Java environment set to ${JAVA_HOME_17} (fallback)"
+  else
+    echo "WARNING: No JAVA_HOME found, skipping Java symlink setup"
+  fi
 fi
 
 if [[ ! -z "${PLUGIN_REMOTE_ENDPOINT_EXECUTABLE}" ]]; then
