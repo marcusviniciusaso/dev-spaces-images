@@ -59,8 +59,11 @@ RUN set -euo pipefail; \
       "https://kind.sigs.k8s.io/dl/${KIND_VERSION}/kind-linux-${arch}"; \
     chmod 0755 /usr/local/bin/kind; \
     \
-    pip3 install --no-cache-dir --force-reinstall 'attrs>=22.2.0'; \
-    pip3 install --no-cache-dir -U cekit podman-compose podman-mcp 'mcp>=1.0.0,<2'; \
+    pip3 install --no-cache-dir -U cekit podman-compose; \
+    python3.11 -m venv /opt/podman-mcp; \
+    /opt/podman-mcp/bin/pip install --no-cache-dir --upgrade pip; \
+    /opt/podman-mcp/bin/pip install --no-cache-dir podman-mcp 'mcp>=1.0.0,<2'; \
+    ln -s /opt/podman-mcp/bin/podman-mcp /usr/local/bin/podman-mcp; \
     \
     curl -fsSL https://gh.io/copilot-install | bash; \
     \

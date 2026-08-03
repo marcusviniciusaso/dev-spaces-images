@@ -21,8 +21,7 @@ podman run --rm -it quay.io/${QUAY_ORG}/${IMAGE_NAME}:${IMAGE_TAG} bash -lc '
   cekit --version || true
   podman version
   podman-compose version
-  podman-mcp --version || pip3 show podman-mcp
-  pip3 show mcp | grep Version
+  podman-mcp --version || /opt/podman-mcp/bin/pip show podman-mcp
 '
 ```
 
