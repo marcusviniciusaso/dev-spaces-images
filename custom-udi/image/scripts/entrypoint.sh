@@ -29,6 +29,20 @@ jdk_import_ca_bundle() {
     return
   fi
 
+  CACERTS_OPT="-cacerts"
+  if ! keytool -cacerts -list -storepass "$KEYSTORE_PASSWORD" >/dev/null 2>&1; then
+    JAVA_CACERTS="${JAVA_HOME}/jre/lib/security/cacerts"
+    if [ ! -f "$JAVA_CACERTS" ]; then
+      JAVA_CACERTS="${JAVA_HOME}/lib/security/cacerts"
+    fi
+    if [ -f "$JAVA_CACERTS" ]; then
+      CACERTS_OPT="-keystore $JAVA_CACERTS"
+    else
+      echo "[jdk] Could not locate cacerts keystore, skipping certificate import"
+      return
+    fi
+  fi
+
   bundle_name=$(basename "$CA_BUNDLE")
   certs_imported=0
   cert_index=0
@@ -43,7 +57,7 @@ jdk_import_ca_bundle() {
     elif [ "$line" = "-----END CERTIFICATE-----" ]; then
       is_cert=false
       echo "$line" >> ${tmp_file}
-      if keytool -import -trustcacerts -cacerts -storepass "$KEYSTORE_PASSWORD" -noprompt -alias "${bundle_name}_${cert_index}" -file $tmp_file; then
+      if keytool -import -trustcacerts $CACERTS_OPT -storepass "$KEYSTORE_PASSWORD" -noprompt -alias "${bundle_name}_${cert_index}" -file $tmp_file; then
         certs_imported=$((certs_imported+1))
       fi
       certs_imported=$((certs_imported+1))
@@ -146,10 +160,11 @@ if [ -f "${HOME}"/.venv/bin/activate ]; then
 fi
 
 #############################################################################
-# use java 8 if USE_JAVA8 is set to 'true', 
+# use java 8 if USE_JAVA8 is set to 'true',
 # use java 11 if USE_JAVA11 is set to 'true',
-# use java 21 if USE_JAVA21 is set to 'true', 
-# by default it is java 17
+# use java 17 if USE_JAVA17 is set to 'true',
+# use java 21 if USE_JAVA21 is set to 'true',
+# by default it is java 25 (fallback: 25 -> 21 -> 17 -> 11 -> 8)
 #############################################################################
 rm -rf /home/tooling/.java/current
 mkdir -p /home/tooling/.java/current
@@ -159,6 +174,9 @@ if [ "${USE_JAVA17}" == "true" ] && [ ! -z "${JAVA_HOME_17}" ]; then
 elif [ "${USE_JAVA11}" == "true" ] && [ ! -z "${JAVA_HOME_11}" ]; then
   ln -s "${JAVA_HOME_11}"/* /home/tooling/.java/current
   echo "Java environment set to ${JAVA_HOME_11}"
+elif [ "${USE_JAVA8}" == "true" ] && [ ! -z "${JAVA_HOME_8}" ]; then
+  ln -s "${JAVA_HOME_8}"/* /home/tooling/.java/current
+  echo "Java environment set to ${JAVA_HOME_8}"
 elif [ "${USE_JAVA21}" == "true" ] && [ ! -z "${JAVA_HOME_21}" ]; then
   ln -s "${JAVA_HOME_21}"/* /home/tooling/.java/current
   echo "Java environment set to ${JAVA_HOME_21}"
@@ -172,6 +190,12 @@ else
   elif [ ! -z "${JAVA_HOME_17}" ]; then
     ln -s "${JAVA_HOME_17}"/* /home/tooling/.java/current
     echo "Java environment set to ${JAVA_HOME_17} (fallback)"
+  elif [ ! -z "${JAVA_HOME_11}" ]; then
+    ln -s "${JAVA_HOME_11}"/* /home/tooling/.java/current
+    echo "Java environment set to ${JAVA_HOME_11} (fallback)"
+  elif [ ! -z "${JAVA_HOME_8}" ]; then
+    ln -s "${JAVA_HOME_8}"/* /home/tooling/.java/current
+    echo "Java environment set to ${JAVA_HOME_8} (fallback)"
   else
     echo "WARNING: No JAVA_HOME found, skipping Java symlink setup"
   fi
