@@ -1,5 +1,5 @@
 ARG SRE_IMAGE=quay.io/vflorent/devspaces-sre:0.8
-ARG BASE_IMAGE=quay.io/marolive/custom-udi:1.2.7
+ARG BASE_IMAGE=quay.io/marolive/custom-udi:3.0.7
 
 # ---- Stage 1: consolidate SRE filesystem into a single layer ----
 FROM ${SRE_IMAGE} AS sre-source
