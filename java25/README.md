@@ -11,9 +11,7 @@ podman-compose -f image/compose.yaml --env-file image/.env build
 ```
 podman run --rm quay.io/${QUAY_ORG}/${IMAGE_NAME}:${IMAGE_TAG} bash -lc '
   echo "== Java =="; java -version;
-  echo "== Spring Boot CLI =="; spring --version;
   echo "== Maven =="; mvn -version | head -n 5;
-  echo "== Gradle =="; gradle --version | head -n 8;
 '
 ```
 
