@@ -10,6 +10,7 @@ ARG KIND_VERSION=v0.26.0
 
 COPY --chown=user:root --chmod=755 scripts/entrypoint.sh /entrypoint.sh
 COPY --chmod=0644 scripts/release-notes.yaml /etc/devspaces-linux-release
+COPY --chown=user:user scripts/dot_bash_aliases /home/user/.bash_aliases
 
 RUN set -euo pipefail; \
     arch="${TARGETARCH:-}"; \
@@ -99,12 +100,108 @@ RUN set -euo pipefail; \
       > /etc/yum.repos.d/nexus-repo; \
     chmod 666 /etc/yum.repos.d/nexus-repo; \
     \
+    printf '%s\n' \
+      '{' \
+      '  "default": [{"type": "reject"}],' \
+      '  "transports": {' \
+      '    "docker": {' \
+      '      "registry.access.redhat.com": [{"type": "insecureAcceptAnything"}],' \
+      '      "registry.redhat.io": [{"type": "insecureAcceptAnything"}],' \
+      '      "quay.io": [{"type": "insecureAcceptAnything"}],' \
+      '      "registry.connect.redhat.com": [{"type": "insecureAcceptAnything"}]' \
+      '    }' \
+      '  }' \
+      '}' \
+      > /etc/containers/policy.json; \
+    \
+    mkdir -p /home/user/.config/containers; \
+    ln -sf /etc/containers/registries.conf /home/user/.config/containers/registries.conf; \
+    ln -sf /etc/containers/policy.json /home/user/.config/containers/policy.json; \
+    chown -R user:user /home/user/.config/containers; \
+    \
+    sed -i 's/^unqualified-search-registries.*/# \0/g' /etc/containers/registries.conf; \
+    printf '%s\n' \
+      '' \
+      '## Registries Internos ##' \
+      'unqualified-search-registries = ["registry.access.redhat.com", "registry.redhat.io", "quay.io", "registry.connect.redhat.com"]' \
+      '' \
+      '## Registries Bloqueados ##' \
+      '[[registry]]' \
+      'location = "mcr.microsoft.com"' \
+      'blocked = true' \
+      '' \
+      '[[registry]]' \
+      'location = "ghcr.io"' \
+      'blocked = true' \
+      '' \
+      '[[registry]]' \
+      'location = "docker.io"' \
+      'blocked = true' \
+      '' \
+      '[[registry]]' \
+      'location = "gcr.io"' \
+      'blocked = true' \
+      '' \
+      '[[registry]]' \
+      'location = "registry.k8s.io"' \
+      'blocked = true' \
+      '' \
+      '[[registry]]' \
+      'location = "k8s.gcr.io"' \
+      'blocked = true' \
+      '' \
+      '[[registry]]' \
+      'location = "public.ecr.aws"' \
+      'blocked = true' \
+      '' \
+      '[[registry]]' \
+      'location = "registry.gitlab.com"' \
+      'blocked = true' \
+      '' \
+      '[[registry]]' \
+      'location = "nvcr.io"' \
+      'blocked = true' \
+      '' \
+      '[[registry]]' \
+      'location = "docker.elastic.co"' \
+      'blocked = true' \
+      '' \
+      '[[registry]]' \
+      'location = "cgr.dev"' \
+      'blocked = true' \
+      '' \
+      '[[registry]]' \
+      'location = "lscr.io"' \
+      'blocked = true' \
+      '' \
+      '[[registry]]' \
+      'location = "registry.opensuse.org"' \
+      'blocked = true' \
+      '' \
+      '[[registry]]' \
+      'location = "docker.cloudsmith.io"' \
+      'blocked = true' \
+      '' \
+      '[[registry]]' \
+      'location = "us-docker.pkg.dev"' \
+      'blocked = true' \
+      '' \
+      '[[registry]]' \
+      'location = "europe-docker.pkg.dev"' \
+      'blocked = true' \
+      '' \
+      '[[registry]]' \
+      'location = "asia-docker.pkg.dev"' \
+      'blocked = true' \
+      >> /etc/containers/registries.conf; \
+    printf '\n# Load bash aliases\nif [ -f ~/.bash_aliases ]; then\n    . ~/.bash_aliases\nfi\n' >> /home/user/.bashrc; \
+    \
     rm -rf /tmp/* /var/tmp/* /root/.cache
 
 LABEL org.opencontainers.image.title="Dev Spaces Custom UDI" \
       org.opencontainers.image.description="UDI customizada para Dev Spaces 3.28" \
       org.opencontainers.image.source="https://github.com/marcusviniciusaso/custom-udi" \
       org.opencontainers.image.vendor="Red Hat (sample)" \
-      org.opencontainers.image.version="3.0.7"
+      org.opencontainers.image.version="3.0.8"
 
 USER 10001
