@@ -1,0 +1,94 @@
+ARG BASE_IMAGE=quay.io/marolive/custom-udi:3.0.8
+FROM ${BASE_IMAGE}
+
+USER 0
+
+ARG MAVEN_VERSION_ARG=3.9.12
+ARG CHROME_VERSION_ARG=151.0.7922.170
+
+# ---- JDK ----
+RUN set -euo pipefail; \
+    PM="microdnf"; command -v microdnf >/dev/null 2>&1 || PM="dnf"; \
+    $PM install -y java-21-openjdk-devel; \
+    $PM clean all;
+
+# ---- Maven ----
+RUN set -euo pipefail; \
+    curl -fsSL -o /tmp/maven.tgz \
+      "https://archive.apache.org/dist/maven/maven-3/${MAVEN_VERSION_ARG}/binaries/apache-maven-${MAVEN_VERSION_ARG}-bin.tar.gz"; \
+    mkdir -p /opt/maven; \
+    tar -C /opt/maven -xzf /tmp/maven.tgz; \
+    ln -s "/opt/maven/apache-maven-${MAVEN_VERSION_ARG}" /opt/maven/current; \
+    ln -sf /opt/maven/current/bin/mvn /usr/local/bin/mvn; \
+    rm -f /tmp/maven.tgz; \
+    chown -R 10001:0 /opt/maven
+
+# ---- Maven settings.xml (Nexus placeholder) ----
+RUN set -euo pipefail; \
+    printf '%s\n' \
+      '<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"' \
+      '        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"' \
+      '        xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0 https://maven.apache.org/xsd/settings-1.0.0.xsd">' \
+      '  <mirrors>' \
+      '    <mirror>' \
+      '      <id>nexus</id>' \
+      '      <mirrorOf>*</mirrorOf>' \
+      '      <url>NEXUS_MAVEN_BASEURL_PLACEHOLDER</url>' \
+      '    </mirror>' \
+      '  </mirrors>' \
+      '  <servers>' \
+      '    <server>' \
+      '      <id>nexus</id>' \
+      '      <username>SEU_USUARIO</username>' \
+      '      <password>SUA_SENHA</password>' \
+      '    </server>' \
+      '  </servers>' \
+      '</settings>' > ~/.m2/settings.xml; \
+    chmod 666 ~/.m2/settings.xml
+
+# ---- Chrome runtime dependencies ----
+RUN set -euo pipefail; \
+    PM="microdnf"; command -v microdnf >/dev/null 2>&1 || PM="dnf"; \
+    $PM install -y \
+      nss nspr atk at-spi2-atk cups-libs libdrm libxkbcommon \
+      libXcomposite libXdamage libXrandr mesa-libgbm alsa-lib \
+      pango cairo liberation-fonts; \
+    $PM clean all
+
+# ---- Chrome for Testing + chromedriver (paired version) ----
+RUN set -euo pipefail; \
+    mkdir -p /opt/chrome; \
+    curl -fsSL -o /tmp/chrome.zip \
+      "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION_ARG}/linux64/chrome-linux64.zip"; \
+    unzip -q /tmp/chrome.zip -d /tmp/chrome-unpack; \
+    mv /tmp/chrome-unpack/chrome-linux64 "/opt/chrome/chrome-${CHROME_VERSION_ARG}"; \
+    ln -s "/opt/chrome/chrome-${CHROME_VERSION_ARG}" /opt/chrome/current; \
+    ln -sf /opt/chrome/current/chrome /usr/local/bin/chrome; \
+    rm -rf /tmp/chrome.zip /tmp/chrome-unpack; \
+    \
+    curl -fsSL -o /tmp/chromedriver.zip \
+      "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION_ARG}/linux64/chromedriver-linux64.zip"; \
+    unzip -q /tmp/chromedriver.zip -d /tmp/chromedriver-unpack; \
+    mv /tmp/chromedriver-unpack/chromedriver-linux64 "/opt/chrome/chromedriver-${CHROME_VERSION_ARG}"; \
+    ln -sf "/opt/chrome/chromedriver-${CHROME_VERSION_ARG}/chromedriver" /usr/local/bin/chromedriver; \
+    rm -rf /tmp/chromedriver.zip /tmp/chromedriver-unpack; \
+    \
+    chown -R 10001:0 /opt/chrome
+
+# ---- Environment config (profile.d) ----
+RUN set -euo pipefail; \
+    printf 'export JAVA_HOME="/usr/lib/jvm/java-21-openjdk";\nexport PATH="$JAVA_HOME/bin:$PATH";\n' \
+      > /etc/profile.d/00-java-tools.sh; \
+    printf 'export MAVEN_HOME="/opt/maven/current";\nexport PATH="$MAVEN_HOME/bin:$PATH";\n' \
+      > /etc/profile.d/10-maven.sh; \
+    printf 'export CHROME_BIN="/usr/local/bin/chrome";\nexport WEBDRIVER_CHROME_DRIVER="/usr/local/bin/chromedriver";\nexport PATH="/opt/chrome/current:$PATH";\n' \
+      > /etc/profile.d/20-chrome.sh; \
+    chmod 0644 /etc/profile.d/00-java-tools.sh /etc/profile.d/10-maven.sh /etc/profile.d/20-chrome.sh
+
+ENV JAVA_HOME="/usr/lib/jvm/java-21-openjdk" \
+    MAVEN_HOME="/opt/maven/current" \
+    CHROME_BIN="/usr/local/bin/chrome" \
+    WEBDRIVER_CHROME_DRIVER="/usr/local/bin/chromedriver" \
+    PATH="/usr/lib/jvm/java-21-openjdk/bin:/opt/maven/current/bin:/opt/chrome/current:${PATH}"
+
+USER 10001
