@@ -52,7 +52,7 @@ RUN set -euo pipefail; \
     $PM install -y \
       nss nspr atk at-spi2-atk cups-libs libdrm libxkbcommon \
       libXcomposite libXdamage libXrandr mesa-libgbm alsa-lib \
-      pango cairo liberation-fonts; \
+      pango cairo; \
     $PM clean all
 
 # ---- Chrome for Testing + chromedriver (paired version) ----
@@ -89,6 +89,7 @@ ENV JAVA_HOME="/usr/lib/jvm/java-21-openjdk" \
     MAVEN_HOME="/opt/maven/current" \
     CHROME_BIN="/usr/local/bin/chrome" \
     WEBDRIVER_CHROME_DRIVER="/usr/local/bin/chromedriver" \
+    DBUS_SESSION_BUS_ADDRESS="/dev/null" \
     PATH="/usr/lib/jvm/java-21-openjdk/bin:/opt/maven/current/bin:/opt/chrome/current:${PATH}"
 
 USER 10001
