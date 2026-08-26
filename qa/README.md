@@ -87,13 +87,16 @@ podman run --rm --entrypoint /bin/bash quay.io/${QUAY_ORG}/${IMAGE_NAME}:${IMAGE
 
   echo "== JMeter com Java 25 ativo no shell (deve reportar JVM 21) ==";
   use-java 25 > /dev/null 2>&1;
-  JMETER_SHOW_JVM=true jmeter -v 2>&1 | head -n 12;
+  JMETER_SHOW_JVM=true jmeter -v 2>&1 | grep -v StatusConsoleListener | head -n 10;
 
   echo "== JMeter smoke non-GUI ==";
   with-java 21 jwebserver -p 8000 -b 127.0.0.1 -d /opt/jmeter/examples > /tmp/jwebserver.log 2>&1 &
+  WEB_PID=$!;
   sleep 5;
+  kill -0 $WEB_PID 2>/dev/null || { echo "ERRO: jwebserver nao subiu (porta 8000 ocupada?)"; cat /tmp/jwebserver.log; };
   rm -f /tmp/result.jtl;
   jmeter -n -t /opt/jmeter/examples/smoke-plan.jmx -l /tmp/result.jtl -j /tmp/jmeter.log;
+  kill $WEB_PID 2>/dev/null;
   echo "-- resultado --"; cat /tmp/result.jtl;
 '
 ```
