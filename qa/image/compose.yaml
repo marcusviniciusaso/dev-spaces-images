@@ -1,0 +1,12 @@
+services:
+  udi-qa:
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: Containerfile
+      args:
+        BASE_IMAGE: ${BASE_IMAGE}
+        MAVEN_VERSION_ARG: ${MAVEN_VERSION_ARG}
+        CHROME_VERSION_ARG: ${CHROME_VERSION_ARG}
+        JMETER_VERSION_ARG: ${JMETER_VERSION_ARG}
+    image: quay.io/${QUAY_ORG}/${IMAGE_NAME}:${IMAGE_TAG}

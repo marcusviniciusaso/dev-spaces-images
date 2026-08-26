@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Executa um comando pontual sob outro JDK, sem alterar o shell corrente.
+#
+#   with-java 8  mvn -version
+#   with-java 11 mvn test
+#
+# Complementa a funcao "use-java" (definida em /etc/profile.d/05-java-versions.sh),
+# que so existe em shell interativo/login.
+set -euo pipefail
+
+usage() {
+    echo "uso: with-java 8|11|17|21|25 <comando> [args...]" >&2
+    exit 1
+}
+
+[ $# -ge 2 ] || usage
+
+version="$1"; shift
+
+case "${version}" in
+    8)  java_home="/usr/lib/jvm/java-1.8.0-openjdk" ;;
+    11) java_home="/usr/lib/jvm/java-11-openjdk" ;;
+    17) java_home="/usr/lib/jvm/java-17-openjdk" ;;
+    21) java_home="/usr/lib/jvm/java-21-openjdk" ;;
+    25) java_home="/usr/lib/jvm/java-25-openjdk" ;;
+    *)  usage ;;
+esac
+
+if [ ! -x "${java_home}/bin/java" ]; then
+    echo "with-java: JDK ${version} nao encontrado em ${java_home}" >&2
+    exit 1
+fi
+
+export JAVA_HOME="${java_home}"
+export PATH="${java_home}/bin:${PATH}"
+
+exec "$@"
