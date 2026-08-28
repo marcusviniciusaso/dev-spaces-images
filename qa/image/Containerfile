@@ -8,8 +8,6 @@ ARG CHROME_VERSION_ARG=152.0.7977.64
 ARG JMETER_VERSION_ARG=5.6.3
 
 # ---- JDK ----
-# A base (udi-rhel9) ja traz java-1.8.0/11/17/21-openjdk-devel instalados e
-# exporta JAVA_HOME_8/11/17/21. Aqui so falta o 25.
 RUN set -euo pipefail; \
     PM="microdnf"; command -v microdnf >/dev/null 2>&1 || PM="dnf"; \
     $PM install -y java-25-openjdk-devel; \
@@ -25,9 +23,6 @@ RUN set -euo pipefail; \
     ln -sf /opt/maven/current/bin/mvn /usr/local/bin/mvn; \
     rm -f /tmp/maven.tgz; \
     chown -R 10001:0 /opt/maven
-
-# O settings.xml nao e mais gerado no build: quem escreve e a funcao
-# write_settings_file() do devspaces-setup.sh, em runtime, no HOME do usuario.
 
 # ---- Chrome runtime dependencies ----
 RUN set -euo pipefail; \
@@ -59,7 +54,6 @@ RUN set -euo pipefail; \
     chown -R 10001:0 /opt/chrome
 
 # ---- Apache JMeter ----
-# Sem Plugins Manager: ele baixaria jars em runtime, e o workspace nao tem egress.
 RUN set -euo pipefail; \
     curl -fsSL -o /tmp/jmeter.tgz \
       "https://archive.apache.org/dist/jmeter/binaries/apache-jmeter-${JMETER_VERSION_ARG}.tgz"; \
@@ -79,8 +73,6 @@ COPY --chmod=0755 scripts/jmeter-wrapper.sh /usr/local/bin/jmeter
 COPY --chmod=0644 examples/index.html examples/smoke-plan.jmx /opt/jmeter/examples/
 
 # ---- Scripts shell + dotfiles ----
-# Destino /home/tooling: e o caminho que .bash_aliases/.bashrc referenciam e o
-# diretorio que o entrypoint da UDI faz stow para /home/user.
 COPY --chown=10001:0 --chmod=0644 \
      scripts/.bash_aliases \
      scripts/.bashrc \
@@ -89,9 +81,6 @@ COPY --chown=10001:0 --chmod=0644 \
      /home/tooling/
 
 # ---- Environment config (profile.d) + permissoes + comandos devspaces-* ----
-# A base custom-udi ja traz /home/user/.bashrc e /home/user/.bash_aliases; o stow
-# do entrypoint ignora arquivos regulares pre-existentes, entao os dotfiles da qa
-# sao replicados em /home/user aqui para que realmente prevalecam.
 RUN set -euo pipefail; \
     printf 'export JAVA_HOME="/usr/lib/jvm/java-21-openjdk";\nexport PATH="$JAVA_HOME/bin:$PATH";\n' \
       > /etc/profile.d/00-java-tools.sh; \
@@ -103,6 +92,13 @@ RUN set -euo pipefail; \
       > /etc/profile.d/30-jmeter.sh; \
     chmod 0644 /etc/profile.d/00-java-tools.sh /etc/profile.d/10-maven.sh \
                /etc/profile.d/20-chrome.sh /etc/profile.d/30-jmeter.sh; \
+    \
+    printf '%s\n' \
+      '' \
+      'if ! declare -F use-java >/dev/null 2>&1 && [ -r /etc/profile.d/05-java-versions.sh ]; then' \
+      '    . /etc/profile.d/05-java-versions.sh' \
+      'fi' \
+      >> /etc/bashrc; \
     \
     chown -R 10001:0 /opt/jmeter/examples; \
     \
@@ -121,9 +117,6 @@ RUN set -euo pipefail; \
       > /usr/local/bin/devspaces-environment; \
     chmod 0755 /usr/local/bin/devspaces-setup /usr/local/bin/devspaces-environment
 
-# JMETER_HOME/bin NAO entra no PATH: o unico "jmeter" alcancavel e o wrapper em
-# /usr/local/bin, que fixa o JDK 21 mesmo com outra versao ativa no shell.
-# USE_JAVA21 evita que o entrypoint da UDI caia no default (Java 25) ao ver JAVA_HOME_25.
 ENV JAVA_HOME="/usr/lib/jvm/java-21-openjdk" \
     JAVA_HOME_25="/usr/lib/jvm/java-25-openjdk" \
     USE_JAVA21="true" \

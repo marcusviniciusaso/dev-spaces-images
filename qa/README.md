@@ -87,7 +87,7 @@ podman run --rm --entrypoint /bin/bash quay.io/${QUAY_ORG}/${IMAGE_NAME}:${IMAGE
 
   echo "== JMeter com Java 25 ativo no shell (deve reportar JVM 21) ==";
   use-java 25 > /dev/null 2>&1;
-  JMETER_SHOW_JVM=true jmeter -v 2>&1 | grep -v StatusConsoleListener | head -n 10;
+  JMETER_SHOW_JVM=true jmeter -v 2>&1 | grep -vE 'StatusConsoleListener|java\.util\.prefs|Created user preferences' | head -n 12;
 
   echo "== JMeter smoke non-GUI ==";
   with-java 21 jwebserver -p 8000 -b 127.0.0.1 -d /opt/jmeter/examples > /tmp/jwebserver.log 2>&1 &

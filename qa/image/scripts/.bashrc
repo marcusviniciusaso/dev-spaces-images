@@ -5,15 +5,21 @@ if [ -f /etc/bashrc ]; then
         . /etc/bashrc
 fi
 
-# DevSpaces may run with a random UID that does not own /home/user.
-# If HOME is not owned by current UID, move HOME to a writable user-owned path.
-if [ -d "${HOME:-}" ] && [ ! -O "$HOME" ]; then
+if ! declare -F use-java >/dev/null 2>&1 && [ -f /etc/profile.d/05-java-versions.sh ]; then
+    . /etc/profile.d/05-java-versions.sh
+fi
+
+if [ -d "${HOME:-}" ] && [ ! -w "$HOME" ]; then
         if [ -d "/home/user/persistent" ] && [ -w "/home/user/persistent" ]; then
                 export HOME="/home/user/persistent/home-$(id -u)"
         else
                 export HOME="/tmp/home-$(id -u)"
         fi
         mkdir -p "$HOME"
+        for _f in .bashrc .bash_aliases; do
+                [ -f "$HOME/$_f" ] || cp -p "/home/tooling/$_f" "$HOME/$_f" 2>/dev/null || true
+        done
+        unset _f
 fi
 
 # User specific environment
