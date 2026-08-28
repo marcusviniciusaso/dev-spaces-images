@@ -30,8 +30,7 @@ fi
 export PATH
 
 # Keep Podman/runtime state writable when DevSpaces runs with random UID.
-# If HOME-backed paths are owned by another UID, fallback to persistent user storage
-# and only use /tmp as a last resort.
+# Non-writable paths fall back to persistent user storage, /tmp as last resort.
 DEFAULT_XDG_CONFIG_HOME="${HOME}/.config"
 DEFAULT_XDG_DATA_HOME="${HOME}/.local/share"
 DEFAULT_XDG_CACHE_HOME="${HOME}/.cache"
@@ -48,7 +47,7 @@ else
         CANDIDATE_XDG_CONFIG_HOME="$DEFAULT_XDG_CONFIG_HOME"
 fi
 
-if [ -d "$CANDIDATE_XDG_CONFIG_HOME" ] && [ ! -O "$CANDIDATE_XDG_CONFIG_HOME" ]; then
+if [ -d "$CANDIDATE_XDG_CONFIG_HOME" ] && [ ! -w "$CANDIDATE_XDG_CONFIG_HOME" ]; then
         export XDG_CONFIG_HOME="$XDG_FALLBACK_BASE/config"
 else
         export XDG_CONFIG_HOME="$CANDIDATE_XDG_CONFIG_HOME"
@@ -60,7 +59,7 @@ else
         CANDIDATE_XDG_DATA_HOME="$DEFAULT_XDG_DATA_HOME"
 fi
 
-if [ -d "$CANDIDATE_XDG_DATA_HOME" ] && [ ! -O "$CANDIDATE_XDG_DATA_HOME" ]; then
+if [ -d "$CANDIDATE_XDG_DATA_HOME" ] && [ ! -w "$CANDIDATE_XDG_DATA_HOME" ]; then
         export XDG_DATA_HOME="$XDG_FALLBACK_BASE/data"
 else
         export XDG_DATA_HOME="$CANDIDATE_XDG_DATA_HOME"
@@ -72,7 +71,7 @@ else
         CANDIDATE_XDG_CACHE_HOME="$DEFAULT_XDG_CACHE_HOME"
 fi
 
-if [ -d "$CANDIDATE_XDG_CACHE_HOME" ] && [ ! -O "$CANDIDATE_XDG_CACHE_HOME" ]; then
+if [ -d "$CANDIDATE_XDG_CACHE_HOME" ] && [ ! -w "$CANDIDATE_XDG_CACHE_HOME" ]; then
         export XDG_CACHE_HOME="$XDG_FALLBACK_BASE/cache"
 else
         export XDG_CACHE_HOME="$CANDIDATE_XDG_CACHE_HOME"
