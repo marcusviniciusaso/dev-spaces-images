@@ -1,4 +1,4 @@
-ARG BASE_IMAGE=quay.io/marolive/custom-udi:3.0.8
+ARG BASE_IMAGE=quay.io/marolive/custom-udi:3.0.9
 FROM ${BASE_IMAGE}
 
 USER 0
@@ -26,28 +26,8 @@ RUN set -euo pipefail; \
     rm -f /tmp/maven.tgz; \
     chown -R 10001:0 /opt/maven
 
-# ---- Maven settings.xml (Nexus placeholder) ----
-RUN set -euo pipefail; \
-    printf '%s\n' \
-      '<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"' \
-      '        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"' \
-      '        xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0 https://maven.apache.org/xsd/settings-1.0.0.xsd">' \
-      '  <mirrors>' \
-      '    <mirror>' \
-      '      <id>nexus</id>' \
-      '      <mirrorOf>*</mirrorOf>' \
-      '      <url>NEXUS_MAVEN_BASEURL_PLACEHOLDER</url>' \
-      '    </mirror>' \
-      '  </mirrors>' \
-      '  <servers>' \
-      '    <server>' \
-      '      <id>nexus</id>' \
-      '      <username>SEU_USUARIO</username>' \
-      '      <password>SUA_SENHA</password>' \
-      '    </server>' \
-      '  </servers>' \
-      '</settings>' > ~/.m2/settings.xml; \
-    chmod 666 ~/.m2/settings.xml
+# O settings.xml nao e mais gerado no build: quem escreve e a funcao
+# write_settings_file() do devspaces-setup.sh, em runtime, no HOME do usuario.
 
 # ---- Chrome runtime dependencies ----
 RUN set -euo pipefail; \
@@ -97,9 +77,21 @@ COPY --chmod=0755 scripts/jmeter-wrapper.sh /usr/local/bin/jmeter
 
 # ---- Plano JMeter de exemplo (smoke test sem egress) ----
 COPY --chmod=0644 examples/index.html examples/smoke-plan.jmx /opt/jmeter/examples/
-RUN chown -R 10001:0 /opt/jmeter/examples
 
-# ---- Environment config (profile.d) ----
+# ---- Scripts shell + dotfiles ----
+# Destino /home/tooling: e o caminho que .bash_aliases/.bashrc referenciam e o
+# diretorio que o entrypoint da UDI faz stow para /home/user.
+COPY --chown=10001:0 --chmod=0644 \
+     scripts/.bash_aliases \
+     scripts/.bashrc \
+     scripts/devspaces-environment.sh \
+     scripts/devspaces-setup.sh \
+     /home/tooling/
+
+# ---- Environment config (profile.d) + permissoes + comandos devspaces-* ----
+# A base custom-udi ja traz /home/user/.bashrc e /home/user/.bash_aliases; o stow
+# do entrypoint ignora arquivos regulares pre-existentes, entao os dotfiles da qa
+# sao replicados em /home/user aqui para que realmente prevalecam.
 RUN set -euo pipefail; \
     printf 'export JAVA_HOME="/usr/lib/jvm/java-21-openjdk";\nexport PATH="$JAVA_HOME/bin:$PATH";\n' \
       > /etc/profile.d/00-java-tools.sh; \
@@ -110,7 +102,24 @@ RUN set -euo pipefail; \
     printf 'export JMETER_HOME="/opt/jmeter/current";\n' \
       > /etc/profile.d/30-jmeter.sh; \
     chmod 0644 /etc/profile.d/00-java-tools.sh /etc/profile.d/10-maven.sh \
-               /etc/profile.d/20-chrome.sh /etc/profile.d/30-jmeter.sh
+               /etc/profile.d/20-chrome.sh /etc/profile.d/30-jmeter.sh; \
+    \
+    chown -R 10001:0 /opt/jmeter/examples; \
+    \
+    chmod 0755 /home/tooling/devspaces-setup.sh /home/tooling/devspaces-environment.sh; \
+    \
+    install -m 0644 -o 10001 -g 0 /home/tooling/.bashrc       /home/user/.bashrc; \
+    install -m 0644 -o 10001 -g 0 /home/tooling/.bash_aliases /home/user/.bash_aliases; \
+    \
+    printf '%s\n' \
+      '#!/usr/bin/env bash' \
+      'exec bash /home/tooling/devspaces-setup.sh "$@"' \
+      > /usr/local/bin/devspaces-setup; \
+    printf '%s\n' \
+      '#!/usr/bin/env bash' \
+      'exec bash /home/tooling/devspaces-environment.sh "$@"' \
+      > /usr/local/bin/devspaces-environment; \
+    chmod 0755 /usr/local/bin/devspaces-setup /usr/local/bin/devspaces-environment
 
 # JMETER_HOME/bin NAO entra no PATH: o unico "jmeter" alcancavel e o wrapper em
 # /usr/local/bin, que fixa o JDK 21 mesmo com outra versao ativa no shell.
