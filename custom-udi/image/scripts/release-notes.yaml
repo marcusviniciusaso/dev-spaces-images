@@ -1,6 +1,6 @@
 devspaces_distro:
   type: base
-  version: "3.0.10"
+  version: "3.0.11"
   release_date: "2026-08-31"
   
 os:
