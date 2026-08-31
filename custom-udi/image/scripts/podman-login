@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REGISTRY="${CONTAINER_REGISTRY:-quay.io}"
+DOCKER_AUTH_FILE="/home/user/persistent/.docker/config.json"
+PODMAN_AUTH_FILE="/home/user/persistent/.config/containers/auth.json"
+BASHRC_FILE="${HOME}/.bashrc"
+
+read -rp "Registry [${REGISTRY}]: " INPUT_REGISTRY
+REGISTRY="${INPUT_REGISTRY:-$REGISTRY}"
+
+read -rp "Username: " USERNAME
+[[ -n "${USERNAME}" ]] || { echo "Username cannot be empty."; exit 1; }
+
+read -rsp "Password/Token: " TOKEN
+echo
+[[ -n "${TOKEN}" ]] || { echo "Password/Token cannot be empty."; exit 1; }
+
+AUTH=$(printf '%s:%s' "$USERNAME" "$TOKEN" | base64 -w0)
+
+mkdir -p "$(dirname "$DOCKER_AUTH_FILE")" "$(dirname "$PODMAN_AUTH_FILE")"
+
+JSON_CONTENT="$(cat <<JSON
+{
+  "auths": {
+    "${REGISTRY}": {
+      "auth": "${AUTH}"
+    }
+  }
+}
+JSON
+)"
+
+printf '%s\n' "$JSON_CONTENT" > "$DOCKER_AUTH_FILE"
+printf '%s\n' "$JSON_CONTENT" > "$PODMAN_AUTH_FILE"
+chmod 600 "$DOCKER_AUTH_FILE" "$PODMAN_AUTH_FILE"
+
+if ! grep -q 'REGISTRY_AUTH_FILE=/home/user/persistent/.config/containers/auth.json' "$BASHRC_FILE" 2>/dev/null; then
+  echo 'export REGISTRY_AUTH_FILE=/home/user/persistent/.config/containers/auth.json' >> "$BASHRC_FILE"
+fi
+
+echo "OK: credentials saved (persistent)."
+echo "You can now use:"
+echo "  podman pull ${REGISTRY}/<image>:<tag>"

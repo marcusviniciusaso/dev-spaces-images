@@ -1,7 +1,6 @@
-# podman login
-jfrog-login() { 
-    echo "podman login <REGISTRY>;"
-}
+# podman login (persistent credentials via REGISTRY_AUTH_FILE)
+podman-login() { /usr/local/bin/podman-login; }
+jfrog-login() { podman-login; }
 
 # podman pull
 jfrog-pull() {
