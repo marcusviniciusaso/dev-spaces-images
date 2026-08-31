@@ -74,7 +74,6 @@ COPY --chmod=0644 examples/index.html examples/smoke-plan.jmx /opt/jmeter/exampl
 
 # ---- Scripts shell + dotfiles ----
 COPY --chown=10001:0 --chmod=0644 \
-     scripts/.bash_aliases \
      scripts/.bashrc \
      scripts/devspaces-environment.sh \
      scripts/devspaces-setup.sh \
@@ -105,7 +104,6 @@ RUN set -euo pipefail; \
     chmod 0755 /home/tooling/devspaces-setup.sh /home/tooling/devspaces-environment.sh; \
     \
     install -m 0644 -o 10001 -g 0 /home/tooling/.bashrc       /home/user/.bashrc; \
-    install -m 0644 -o 10001 -g 0 /home/tooling/.bash_aliases /home/user/.bash_aliases; \
     \
     printf '%s\n' \
       '#!/usr/bin/env bash' \

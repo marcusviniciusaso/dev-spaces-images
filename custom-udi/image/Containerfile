@@ -184,6 +184,7 @@ RUN set -euo pipefail; \
       'location = "asia-docker.pkg.dev"' \
       'blocked = true' \
       >> /etc/containers/registries.conf; \
+    install -m 0644 -o 10001 -g 0 /home/user/.bash_aliases /home/tooling/.bash_aliases; \
     printf '\n# Load bash aliases\nif [ -f ~/.bash_aliases ]; then\n    . ~/.bash_aliases\nfi\n' >> /home/user/.bashrc; \
     \
     rm -rf /tmp/* /var/tmp/* /root/.cache
