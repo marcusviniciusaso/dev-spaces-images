@@ -1,5 +1,8 @@
 # podman login (persistent credentials via REGISTRY_AUTH_FILE)
-podman-login() { /usr/local/bin/podman-login; }
+podman-login() {
+    /usr/local/bin/podman-login
+    export REGISTRY_AUTH_FILE=/home/user/persistent/.config/containers/auth.json
+}
 jfrog-login() { podman-login; }
 
 # podman pull

@@ -2,8 +2,8 @@
 set -euo pipefail
 
 REGISTRY="${CONTAINER_REGISTRY:-quay.io}"
-DOCKER_AUTH_FILE="/home/user/persistent/.docker/config.json"
-PODMAN_AUTH_FILE="/home/user/persistent/.config/containers/auth.json"
+PERSISTENT_AUTH="/home/user/persistent/.config/containers/auth.json"
+PERSISTENT_DOCKER="/home/user/persistent/.docker/config.json"
 BASHRC_FILE="${HOME}/.bashrc"
 
 read -rp "Registry [${REGISTRY}]: " INPUT_REGISTRY
@@ -18,8 +18,6 @@ echo
 
 AUTH=$(printf '%s:%s' "$USERNAME" "$TOKEN" | base64 -w0)
 
-mkdir -p "$(dirname "$DOCKER_AUTH_FILE")" "$(dirname "$PODMAN_AUTH_FILE")"
-
 JSON_CONTENT="$(cat <<JSON
 {
   "auths": {
@@ -31,12 +29,22 @@ JSON_CONTENT="$(cat <<JSON
 JSON
 )"
 
-printf '%s\n' "$JSON_CONTENT" > "$DOCKER_AUTH_FILE"
-printf '%s\n' "$JSON_CONTENT" > "$PODMAN_AUTH_FILE"
-chmod 600 "$DOCKER_AUTH_FILE" "$PODMAN_AUTH_FILE"
+# Write to persistent storage
+mkdir -p "$(dirname "$PERSISTENT_AUTH")" "$(dirname "$PERSISTENT_DOCKER")"
+printf '%s\n' "$JSON_CONTENT" > "$PERSISTENT_AUTH"
+printf '%s\n' "$JSON_CONTENT" > "$PERSISTENT_DOCKER"
+chmod 600 "$PERSISTENT_AUTH" "$PERSISTENT_DOCKER"
 
-if ! grep -q 'REGISTRY_AUTH_FILE=/home/user/persistent/.config/containers/auth.json' "$BASHRC_FILE" 2>/dev/null; then
-  echo 'export REGISTRY_AUTH_FILE=/home/user/persistent/.config/containers/auth.json' >> "$BASHRC_FILE"
+# Write to REGISTRY_AUTH_FILE if set and different from persistent path
+if [ -n "${REGISTRY_AUTH_FILE:-}" ] && [ "$REGISTRY_AUTH_FILE" != "$PERSISTENT_AUTH" ]; then
+    mkdir -p "$(dirname "$REGISTRY_AUTH_FILE")"
+    printf '%s\n' "$JSON_CONTENT" > "$REGISTRY_AUTH_FILE"
+    chmod 600 "$REGISTRY_AUTH_FILE"
+fi
+
+# Set REGISTRY_AUTH_FILE for future sessions if not already configured
+if ! grep -q 'REGISTRY_AUTH_FILE=' "$BASHRC_FILE" 2>/dev/null; then
+    echo 'export REGISTRY_AUTH_FILE=/home/user/persistent/.config/containers/auth.json' >> "$BASHRC_FILE"
 fi
 
 echo "OK: credentials saved (persistent)."
