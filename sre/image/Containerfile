@@ -1,5 +1,5 @@
 ARG SRE_IMAGE=quay.io/vflorent/devspaces-sre:0.8
-ARG BASE_IMAGE=quay.io/marolive/custom-udi:3.0.7
+ARG BASE_IMAGE=quay.io/marolive/custom-udi:3.0.11
 
 # ---- Stage 1: consolidate SRE filesystem into a single layer ----
 FROM ${SRE_IMAGE} AS sre-source
@@ -31,7 +31,33 @@ RUN set -euo pipefail; \
       fi; \
     done; \
     rm -rf /tmp/sre-merge; \
-    chown -R 10001:0 /home/user 2>/dev/null || true; \
     ldconfig 2>/dev/null || true
+
+# ---- Scripts shell + dotfiles ----
+COPY --chown=10001:0 --chmod=0644 \
+     scripts/.bashrc \
+     scripts/devspaces-environment.sh \
+     scripts/devspaces-setup.sh \
+     /home/tooling/
+
+# ---- Permissoes + comandos devspaces-* ----
+RUN set -euo pipefail; \
+    chmod 0755 /home/tooling/devspaces-setup.sh /home/tooling/devspaces-environment.sh; \
+    \
+    install -m 0644 -o 10001 -g 0 /home/tooling/.bashrc /home/user/.bashrc; \
+    \
+    printf '%s\n' \
+      '#!/usr/bin/env bash' \
+      'exec bash /home/tooling/devspaces-setup.sh "$@"' \
+      > /usr/local/bin/devspaces-setup; \
+    printf '%s\n' \
+      '#!/usr/bin/env bash' \
+      'exec bash /home/tooling/devspaces-environment.sh "$@"' \
+      > /usr/local/bin/devspaces-environment; \
+    printf '%s\n' \
+      '#!/usr/bin/env bash' \
+      'exec cat /etc/devspaces-linux-release' \
+      > /usr/local/bin/devspaces-linux-release; \
+    chmod 0755 /usr/local/bin/devspaces-setup /usr/local/bin/devspaces-environment /usr/local/bin/devspaces-linux-release
 
 USER 10001
