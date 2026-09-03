@@ -1,0 +1,13 @@
+services:
+  udi-node:
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: Containerfile
+      args:
+        BASE_IMAGE: ${BASE_IMAGE}
+        NODE22_VERSION_ARG: ${NODE22_VERSION_ARG}
+        NODE24_VERSION_ARG: ${NODE24_VERSION_ARG}
+        NODE25_VERSION_ARG: ${NODE25_VERSION_ARG}
+        NODE_DEFAULT_MAJOR_ARG: ${NODE_DEFAULT_MAJOR_ARG}
+    image: quay.io/${QUAY_ORG}/${IMAGE_NAME}:${IMAGE_TAG}
