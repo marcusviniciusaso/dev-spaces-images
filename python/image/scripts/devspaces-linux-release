@@ -1,9 +1,0 @@
-devspaces_distro:
-  type: base
-  version: "2.0.1"
-  release_date: "2026-07-29"
-
-os:
-  name: "Red Hat Enterprise Linux"
-  version: "9.8"
-

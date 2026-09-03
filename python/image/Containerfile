@@ -1,153 +1,191 @@
-ARG BASE_IMAGE=quay.io/marolive/custom-udi:3.0.2
+ARG BASE_IMAGE=quay.io/marolive/custom-udi:3.0.11
 FROM ${BASE_IMAGE}
 
 USER 0
 
-# Workaround for DevSpaces init that may try to recreate an existing config dir.
-RUN cat > /usr/local/bin/mkdir <<'EOF' && chmod 755 /usr/local/bin/mkdir
-#!/usr/bin/env bash
-if [ "$#" -eq 1 ] && [ "$1" = "/home/tooling/.config" ] && [ -d "$1" ]; then
-    exit 0
-fi
-exec /usr/bin/mkdir "$@"
-EOF
+ARG PYTHON39_VERSION_ARG=3.9.25
+ARG PYTHON312_VERSION_ARG=3.12.14
+ARG PYTHON313_VERSION_ARG=3.13.15
+ARG PYTHON314_VERSION_ARG=3.14.7
+ARG PYTHON_DEFAULT_MINOR_ARG=3.12
 
-# =========================
-# ENV
-# =========================
-ENV HOME=/home/tooling \
-    HOME2=/home/tooling \
-    PYTHON_ROOT=/opt/python \
-    PYTHON_STATE_DIR=/home/user/.python \
-    PATH=/usr/local/bin:$PATH
-
-
-RUN mkdir -p $PYTHON_ROOT/versions $PYTHON_STATE_DIR && \
-    touch $PYTHON_STATE_DIR/current && \
-    chown -R 10001:0 $PYTHON_STATE_DIR && \
-    chmod -R g+rwX $PYTHON_STATE_DIR && \
-    chmod -R a+rX $PYTHON_ROOT
-
-COPY scripts/devspaces-linux-release /etc
-COPY scripts/.bash_aliases $HOME2
-COPY --chmod=755 scripts/devspaces-setup.sh $HOME2
-COPY --chmod=755 scripts/devspaces-environment.sh $HOME2
-COPY scripts/.bashrc $HOME2
-
-# Ensure entrypoint can find passwd/group templates regardless of HOME override
-RUN cp -a /home/tooling/passwd.template /home/user/passwd.template 2>/dev/null || true && \
-    cp -a /home/tooling/group.template   /home/user/group.template   2>/dev/null || true && \
-    chown 10001:0 /home/user/passwd.template /home/user/group.template 2>/dev/null || true
-
-# =========================
-# PYTHON VIA DNF (3.9, 3.12)
-# =========================
+# ---- Python (3.9 / 3.12 / 3.13 / 3.14) ----
+# Cada versao vem do gerenciador de pacotes quando existe pacote; so cai para
+# build do fonte (versao fixada nos ARGs) quando nao existe. /usr/bin/python3
+# nunca e removido nem substituido: podman-compose, cekit e podman-mcp da
+# imagem base dependem do interpretador do sistema.
+#
+# Os -devel do build do fonte vivem no repo CodeReady Builder, que o microdnf
+# nao resolve ("No package matches"); por isso eles usam dnf ($PM_BUILD).
 RUN set -euo pipefail; \
     PM="microdnf"; command -v microdnf >/dev/null 2>&1 || PM="dnf"; \
-    $PM install -y \
-      python3 python3-devel python3-pip \
-      python3.12 python3.12-devel python3.12-pip; \
-    $PM clean all; \
+    $PM install -y tar gzip findutils; \
     \
-    for pybin in python3.9 python3.12; do \
-      FULL_VER=$($pybin -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')"); \
-      MINOR=$($pybin -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"); \
-      mkdir -p $PYTHON_ROOT/versions/$FULL_VER/bin; \
-      ln -sf /usr/bin/python${MINOR} $PYTHON_ROOT/versions/$FULL_VER/bin/python3; \
-      ln -sf /usr/bin/pip${MINOR}    $PYTHON_ROOT/versions/$FULL_VER/bin/pip3; \
-      echo "=== Python $FULL_VER (dnf) registrado ==="; \
-    done
+    PM_BUILD="dnf"; command -v dnf >/dev/null 2>&1 || PM_BUILD="$PM"; \
+    \
+    CORE_BUILD_DEPS="gcc gcc-c++ make openssl-devel zlib-devel libffi-devel"; \
+    OPTIONAL_BUILD_DEPS="bzip2-devel sqlite-devel readline-devel libedit-devel ncurses-devel xz-devel tk-devel gdbm-devel libuuid-devel"; \
+    build_deps_installed=0; \
+    \
+    install_build_deps() { \
+      [ "$build_deps_installed" -eq 0 ] || return 0; \
+      $PM_BUILD install -y --enablerepo=ubi-9-codeready-builder-rpms $CORE_BUILD_DEPS \
+        || $PM_BUILD install -y $CORE_BUILD_DEPS; \
+      for dep in $OPTIONAL_BUILD_DEPS; do \
+        $PM_BUILD install -y --enablerepo=ubi-9-codeready-builder-rpms "$dep" \
+          || $PM_BUILD install -y "$dep" \
+          || echo "AVISO: $dep indisponivel; o modulo correspondente do Python ficara ausente"; \
+      done; \
+      build_deps_installed=1; \
+    }; \
+    \
+    link_python_extras() { \
+      bin_dir="$1"; \
+      ln -sf python3 "$bin_dir/python"; \
+      if [ ! -e "$bin_dir/pip3" ]; then \
+        printf '#!/usr/bin/env bash\nexec "%s/python3" -m pip "$@"\n' "$bin_dir" > "$bin_dir/pip3"; \
+        chmod 0755 "$bin_dir/pip3"; \
+      fi; \
+      ln -sf pip3 "$bin_dir/pip"; \
+    }; \
+    \
+    for MINOR in 3.9 3.12 3.13 3.14; do \
+      case "$MINOR" in \
+        3.9)  PINNED="${PYTHON39_VERSION_ARG}";  PKGS="python3 python3-devel python3-pip" ;; \
+        3.12) PINNED="${PYTHON312_VERSION_ARG}"; PKGS="python3.12 python3.12-devel python3.12-pip" ;; \
+        3.13) PINNED="${PYTHON313_VERSION_ARG}"; PKGS="python3.13 python3.13-devel python3.13-pip" ;; \
+        3.14) PINNED="${PYTHON314_VERSION_ARG}"; PKGS="python3.14 python3.14-devel python3.14-pip" ;; \
+      esac; \
+      \
+      if $PM install -y $PKGS && command -v "python${MINOR}" >/dev/null 2>&1; then \
+        FULL="$("python${MINOR}" -c 'import sys; print("%d.%d.%d" % sys.version_info[:3])')"; \
+        echo "=== Python ${MINOR} -> ${FULL} (gerenciador de pacotes) ==="; \
+        mkdir -p "/opt/python/versions/${FULL}/bin"; \
+        ln -sf "$(command -v "python${MINOR}")" "/opt/python/versions/${FULL}/bin/python3"; \
+        if command -v "pip${MINOR}" >/dev/null 2>&1; then \
+          ln -sf "$(command -v "pip${MINOR}")" "/opt/python/versions/${FULL}/bin/pip3"; \
+        fi; \
+        link_python_extras "/opt/python/versions/${FULL}/bin"; \
+      else \
+        echo "=== Python ${MINOR} -> ${PINNED} (build do fonte) ==="; \
+        install_build_deps; \
+        READLINE_OPT=""; \
+        if [ ! -e /usr/include/readline/readline.h ] && [ -e /usr/include/editline/readline.h ]; then \
+          READLINE_OPT="--with-readline=editline"; \
+        fi; \
+        curl -fsSL -o "/tmp/Python-${PINNED}.tgz" \
+          "https://www.python.org/ftp/python/${PINNED}/Python-${PINNED}.tgz"; \
+        tar -C /tmp -xzf "/tmp/Python-${PINNED}.tgz"; \
+        cd "/tmp/Python-${PINNED}"; \
+        ./configure --prefix="/opt/python/versions/${PINNED}" \
+          --enable-shared \
+          --with-ensurepip=install \
+          ${READLINE_OPT} \
+          LDFLAGS="-Wl,-rpath,/opt/python/versions/${PINNED}/lib"; \
+        make -j"$(nproc)" >/dev/null; \
+        make install >/dev/null; \
+        cd /; \
+        rm -rf "/tmp/Python-${PINNED}" "/tmp/Python-${PINNED}.tgz"; \
+        test -x "/opt/python/versions/${PINNED}/bin/python3"; \
+        "/opt/python/versions/${PINNED}/bin/python3" -c 'import ssl, zlib, ctypes'; \
+        "/opt/python/versions/${PINNED}/bin/python3" -c 'import sqlite3, lzma, bz2, readline, curses' \
+          || echo "AVISO: Python ${PINNED} construido sem algum modulo opcional"; \
+        link_python_extras "/opt/python/versions/${PINNED}/bin"; \
+      fi; \
+    done; \
+    \
+    FULL_DEFAULT="$(ls -1 /opt/python/versions | grep -E "^${PYTHON_DEFAULT_MINOR_ARG}\." | sort -V | tail -n 1)"; \
+    test -n "$FULL_DEFAULT"; \
+    ln -sfn "/opt/python/versions/${FULL_DEFAULT}" /opt/python/default; \
+    echo "=== Versao padrao: ${PYTHON_DEFAULT_MINOR_ARG} -> ${FULL_DEFAULT} ==="; \
+    \
+    $PM clean all; \
+    rm -rf /var/cache/dnf /var/cache/yum /tmp/* /root/.cache; \
+    chown -R 10001:0 /opt/python; \
+    chmod -R g=u /opt/python
 
-# =========================
-# PYTHON FROM SOURCE (3.13, 3.14)
-# =========================
-ARG PYTHON_3_13_VERSION=3.13.13
-ARG PYTHON_3_14_VERSION=3.14.4
+# ---- Utilitarios de troca de versao do Python ----
+COPY --chmod=0644 scripts/py-common.sh      /usr/local/bin/py-common.sh
+COPY --chmod=0755 scripts/pyuse.sh          /usr/local/bin/pyuse
+COPY --chmod=0755 scripts/pylist.sh         /usr/local/bin/pylist
+COPY --chmod=0755 scripts/python-wrapper.sh /opt/pyshims/python
+COPY --chmod=0755 scripts/pip-wrapper.sh    /opt/pyshims/pip
 
+# ---- Scripts shell + dotfiles ----
+COPY --chown=10001:0 --chmod=0644 \
+     scripts/.bashrc \
+     scripts/devspaces-environment.sh \
+     scripts/devspaces-setup.sh \
+     /home/tooling/
+
+# ---- Environment config (profile.d) + permissoes + comandos devspaces-* ----
 RUN set -euo pipefail; \
-    PM="microdnf"; command -v microdnf >/dev/null 2>&1 || PM="dnf"; \
-    $PM install -y --enablerepo=ubi-9-codeready-builder-rpms \
-      gcc gcc-c++ make \
-      openssl-devel bzip2-devel libffi-devel \
-      zlib-devel ncurses-devel sqlite-devel \
-      xz-devel tk-devel \
-      tar gzip findutils; \
-    $PM clean all; \
+    ln -sf /opt/pyshims/python /opt/pyshims/python3; \
+    ln -sf /opt/pyshims/pip    /opt/pyshims/pip3; \
+    ln -sf /opt/pyshims/python /usr/local/bin/python; \
+    ln -sf /opt/pyshims/python /usr/local/bin/python3; \
+    ln -sf /opt/pyshims/pip    /usr/local/bin/pip; \
+    ln -sf /opt/pyshims/pip    /usr/local/bin/pip3; \
+    chmod -R a+rX /opt/pyshims; \
     \
-    for PYVER in ${PYTHON_3_13_VERSION} ${PYTHON_3_14_VERSION}; do \
-      echo "=== Building Python $PYVER from source ==="; \
-      curl -fsSL -o /tmp/Python-${PYVER}.tgz \
-        "https://www.python.org/ftp/python/${PYVER}/Python-${PYVER}.tgz"; \
-      tar -C /tmp -xzf /tmp/Python-${PYVER}.tgz; \
-      cd /tmp/Python-${PYVER}; \
-      ./configure --prefix=$PYTHON_ROOT/versions/$PYVER \
-        --enable-shared \
-        --with-ensurepip=install \
-        LDFLAGS="-Wl,-rpath,$PYTHON_ROOT/versions/$PYVER/lib"; \
-      make -j"$(nproc)"; \
-      make install; \
-      cd / && rm -rf /tmp/Python-${PYVER}*; \
-    done
-
-# =========================
-# DEFAULT VERSION (3.12)
-# =========================
-RUN FULL_VER=$(python3.12 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')"); \
-    echo "$FULL_VER" > $PYTHON_STATE_DIR/current && \
-    chown 10001:0 $PYTHON_STATE_DIR/current && \
-    chmod g+rw $PYTHON_STATE_DIR/current
-
-
-# =========================
-# WRAPPERS
-# =========================
-COPY scripts/python-wrapper.sh /usr/local/bin/python
-COPY scripts/pip-wrapper.sh /usr/local/bin/pip
-COPY scripts/pylist.sh /usr/local/bin/pylist
-COPY scripts/pyenv.sh /usr/local/bin/pyuse
-
-RUN chmod +x \
-    /usr/local/bin/python \
-    /usr/local/bin/pip \
-    /usr/local/bin/pylist \
-    /usr/local/bin/pyuse
-
-RUN FULL_VER=$(python3.12 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')"); \
-    sed -i "s/DEFAULT_VERSION=\".*\"/DEFAULT_VERSION=\"$FULL_VER\"/" \
-      /usr/local/bin/python /usr/local/bin/pip
-
-# =========================
-# FIX PATH / PRIORITY
-# =========================
-RUN echo 'export PATH=/usr/local/bin:$PATH' > /etc/profile.d/zzz-python.sh
-
-# remove conflitos de python3
-RUN rm -f /usr/bin/python3 /usr/local/bin/python3 || true
-
-# garante override total
-RUN ln -sf /usr/local/bin/python /usr/local/bin/python3 && \
-    ln -sf /usr/local/bin/python /usr/bin/python3 && \
-    ln -sf /usr/local/bin/pip /usr/local/bin/pip3
-
-# =========================
-# PIP CONFIG (Nexus proxy)
-# =========================
-RUN mkdir -p /home/user/.config/pip && \
     printf '%s\n' \
-      '[global]' \
-      'index-url = NEXUS_PYPI_BASEURL_PLACEHOLDER' \
-      'trusted-host = NEXUS_TRUSTED_HOST_PLACEHOLDER' \
-      'timeout = 60' \
-      > /home/user/.config/pip/pip.conf && \
-    chmod 664 /home/user/.config/pip/pip.conf && \
-    chown -R 10001:0 /home/user/.config && \
-    chmod -R g+rwX /home/user/.config
+      'export PYTHON_ROOT="/opt/python"' \
+      'export PYTHON_VERSION_DIR="/opt/python/versions"' \
+      'if [ -d /home/user/persistent ] && [ -w /home/user/persistent ]; then' \
+      '    export PYTHON_STATE_DIR="${PYTHON_STATE_DIR:-/home/user/persistent/.python}"' \
+      'else' \
+      '    export PYTHON_STATE_DIR="${PYTHON_STATE_DIR:-/home/user/.python}"' \
+      'fi' \
+      'export PYTHON_CURRENT_FILE="${PYTHON_CURRENT_FILE:-$PYTHON_STATE_DIR/current}"' \
+      'if [ -r /usr/local/bin/py-common.sh ]; then' \
+      '    . /usr/local/bin/py-common.sh' \
+      '    ensure_python_state' \
+      '    apply_python_target "$(read_python_target)" >/dev/null 2>&1 || true' \
+      'fi' \
+      > /etc/profile.d/20-python.sh; \
+    chmod 0644 /etc/profile.d/20-python.sh; \
+    \
+    mkdir -p /home/user/.python; \
+    echo "${PYTHON_DEFAULT_MINOR_ARG}" > /home/user/.python/current; \
+    chown -R 10001:0 /home/user/.python; \
+    chmod -R g=u /home/user/.python; \
+    \
+    chmod 0755 /home/tooling/devspaces-setup.sh /home/tooling/devspaces-environment.sh; \
+    \
+    install -m 0644 -o 10001 -g 0 /home/tooling/.bashrc /home/user/.bashrc; \
+    \
+    printf '%s\n' \
+      '#!/usr/bin/env bash' \
+      'exec bash /home/tooling/devspaces-setup.sh "$@"' \
+      > /usr/local/bin/devspaces-setup; \
+    printf '%s\n' \
+      '#!/usr/bin/env bash' \
+      'exec bash /home/tooling/devspaces-environment.sh "$@"' \
+      > /usr/local/bin/devspaces-environment; \
+    printf '%s\n' \
+      '#!/usr/bin/env bash' \
+      'exec cat /etc/devspaces-linux-release' \
+      > /usr/local/bin/devspaces-linux-release; \
+    chmod 0755 /usr/local/bin/devspaces-setup /usr/local/bin/devspaces-environment /usr/local/bin/devspaces-linux-release
 
-# =========================
-# PERMISSIONS
-# =========================
-RUN chown -R 10001:0 /home/user/.python /home/tooling /home/user/.config && \
-    chmod -R g=u /home/user/.python /home/tooling /home/user/.config
+# /opt/pyshims vai no INICIO do PATH: na base o /usr/bin vem antes do
+# /usr/local/bin, entao wrappers colocados so em /usr/local/bin ficariam
+# sombreados por /usr/bin/python3 e a versao selecionada seria ignorada por
+# processos fora de shell de login (VS Code server, commands do devfile).
+# Um diretorio dedicado evita reordenar o PATH inteiro da base.
+#
+# /opt/python/default/bin vai no FIM, so como rede de seguranca para os
+# console_scripts da versao padrao. Ele fica fora de $PYTHON_ROOT/versions e o
+# nome /opt/pyshims nao casa com o filtro "^$PYTHON_ROOT/" do apply_python_target,
+# entao a troca de versao nao remove os shims do PATH.
+# PYTHON_STATE_DIR NAO entra no ENV de proposito. Fixa-lo aqui mataria a
+# deteccao em runtime de py-common.sh ("${PYTHON_STATE_DIR:-...}"), que so
+# escolhe /home/user/persistent/.python quando a variavel esta vazia -- a
+# selecao do pyuse deixaria de sobreviver a pause/resume sempre que o devfile
+# nao definisse a variavel explicitamente.
+ENV PYTHON_ROOT="/opt/python" \
+    PYTHON_VERSION_DIR="/opt/python/versions" \
+    PYTHON_DEFAULT_MINOR="${PYTHON_DEFAULT_MINOR_ARG}" \
+    PATH="/opt/pyshims:${PATH}:/opt/python/default/bin"
 
 USER 10001
-WORKDIR /home/user
