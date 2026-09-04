@@ -1,50 +1,77 @@
 ARG SRE_IMAGE=quay.io/vflorent/devspaces-sre:0.8
-ARG BASE_IMAGE=quay.io/marolive/custom-udi:3.0.11
+ARG BASE_IMAGE=quay.io/marolive/custom-udi:3.1.1
 
-# ---- Stage 1: consolidate SRE filesystem into a single layer ----
+# ---- Stage 1: inventario do filesystem da base ----
+# Poucos MB de texto. Serve para o stage 2 exportar apenas o delta: se o merge
+# fosse feito na imagem final, a copia intermediaria (~4 GB) ficaria gravada
+# numa camada e o "rm -rf" so acrescentaria whiteouts, dobrando o tamanho.
+FROM ${BASE_IMAGE} AS base-index
+
+# USER 0 e obrigatorio: o usuario padrao da imagem nao le tudo sob /usr e /opt,
+# e um inventario incompleto faria o stage 2 exportar arquivos ja existentes.
+USER 0
+
+RUN set -eu; \
+    : > /tmp/base-entries.raw; \
+    for d in /usr /opt /etc/profile.d; do \
+      [ -d "$d" ] || continue; \
+      find "$d" -mindepth 1 \( -type f -o -type l -o -type d \) -printf '%p\n' \
+        >> /tmp/base-entries.raw || true; \
+    done; \
+    LC_ALL=C sort -u /tmp/base-entries.raw > /tmp/base-entries.txt; \
+    rm -f /tmp/base-entries.raw
+
+# ---- Stage 2: exporta so o que a base ainda nao possui ----
+# --hard-dereference e necessario porque o filtro pode remover do delta o
+# primeiro nome de um conjunto de hard links (ele ja existe na base); sem a
+# flag o tar gravaria um link para um alvo ausente e a extracao falharia.
 FROM ${SRE_IMAGE} AS sre-source
 
-RUN mkdir -p /tmp/sre-export; \
+# Sem USER 0 o tar falha com "Permission denied" nos arquivos so-root (por
+# exemplo /opt/rh/gcc-toolset-13) e a ferramenta sai faltando na imagem final.
+USER 0
+
+COPY --from=base-index /tmp/base-entries.txt /tmp/base-entries.txt
+
+RUN set -eu; \
+    mkdir -p /tmp/sre-export; \
+    : > /tmp/sre-dirs.raw; \
+    : > /tmp/sre-files.raw; \
     for d in usr/local/bin usr/local/lib usr/local/share \
              usr/bin usr/lib64 usr/share \
              opt etc/profile.d; do \
-      if [ -d "/$d" ]; then \
-        mkdir -p "/tmp/sre-export/$d"; \
-        cp -a "/$d/." "/tmp/sre-export/$d/" 2>/dev/null || true; \
-      fi; \
-    done
+      [ -d "/$d" ] || continue; \
+      find "/$d" -mindepth 1 -type d -printf '%p\n' >> /tmp/sre-dirs.raw || true; \
+      find "/$d" -mindepth 1 \( -type f -o -type l \) -printf '%p\n' >> /tmp/sre-files.raw || true; \
+    done; \
+    LC_ALL=C sort -u /tmp/sre-dirs.raw  > /tmp/sre-dirs.txt; \
+    LC_ALL=C sort -u /tmp/sre-files.raw > /tmp/sre-files.txt; \
+    \
+    LC_ALL=C comm -23 /tmp/sre-dirs.txt  /tmp/base-entries.txt | sed 's|^/||' >  /tmp/sre-delta.txt; \
+    LC_ALL=C comm -23 /tmp/sre-files.txt /tmp/base-entries.txt | sed 's|^/||' >> /tmp/sre-delta.txt; \
+    echo "=== entradas exclusivas da SRE: $(wc -l < /tmp/sre-delta.txt) ==="; \
+    \
+    tar -C / -cpf /tmp/sre-delta.tar --no-recursion --hard-dereference -T /tmp/sre-delta.txt; \
+    tar -C /tmp/sre-export -xpf /tmp/sre-delta.tar; \
+    rm -f /tmp/sre-delta.tar /tmp/sre-dirs.raw /tmp/sre-files.raw
 
-# ---- Stage 2: merge SRE tools into custom-udi ----
+# ---- Stage 3: imagem final ----
 FROM ${BASE_IMAGE}
 
 USER 0
 
-COPY --from=sre-source /tmp/sre-export/ /tmp/sre-merge/
+# Uma unica camada, so com o que a base nao tem (sem copia intermediaria).
+COPY --from=sre-source /tmp/sre-export/ /
+
+COPY scripts/ /tmp/build-scripts/
 
 RUN set -euo pipefail; \
-    for d in usr/local/bin usr/local/lib usr/local/share \
-             usr/bin usr/lib64 usr/share \
-             opt etc/profile.d; do \
-      if [ -d "/tmp/sre-merge/$d" ]; then \
-        mkdir -p "/$d"; \
-        cp -a -n "/tmp/sre-merge/$d/." "/$d/" 2>/dev/null || true; \
-      fi; \
-    done; \
-    rm -rf /tmp/sre-merge; \
-    ldconfig 2>/dev/null || true
-
-# ---- Scripts shell + dotfiles ----
-COPY --chown=10001:0 --chmod=0644 \
-     scripts/.bashrc \
-     scripts/devspaces-environment.sh \
-     scripts/devspaces-setup.sh \
-     /home/tooling/
-
-# ---- Permissoes + comandos devspaces-* ----
-RUN set -euo pipefail; \
-    chmod 0755 /home/tooling/devspaces-setup.sh /home/tooling/devspaces-environment.sh; \
+    ldconfig 2>/dev/null || true; \
     \
-    install -m 0644 -o 10001 -g 0 /home/tooling/.bashrc /home/user/.bashrc; \
+    install -m 0644 -o 10001 -g 0 /tmp/build-scripts/.bashrc                  /home/tooling/.bashrc; \
+    install -m 0755 -o 10001 -g 0 /tmp/build-scripts/devspaces-environment.sh /home/tooling/devspaces-environment.sh; \
+    install -m 0755 -o 10001 -g 0 /tmp/build-scripts/devspaces-setup.sh       /home/tooling/devspaces-setup.sh; \
+    install -m 0644 -o 10001 -g 0 /home/tooling/.bashrc                       /home/user/.bashrc; \
     \
     printf '%s\n' \
       '#!/usr/bin/env bash' \
@@ -58,6 +85,8 @@ RUN set -euo pipefail; \
       '#!/usr/bin/env bash' \
       'exec cat /etc/devspaces-linux-release' \
       > /usr/local/bin/devspaces-linux-release; \
-    chmod 0755 /usr/local/bin/devspaces-setup /usr/local/bin/devspaces-environment /usr/local/bin/devspaces-linux-release
+    chmod 0755 /usr/local/bin/devspaces-setup /usr/local/bin/devspaces-environment /usr/local/bin/devspaces-linux-release; \
+    \
+    rm -rf /tmp/build-scripts
 
 USER 10001

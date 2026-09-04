@@ -1,4 +1,4 @@
-ARG BASE_IMAGE=quay.io/marolive/custom-udi:3.0.11
+ARG BASE_IMAGE=quay.io/marolive/custom-udi:3.1.1
 FROM ${BASE_IMAGE}
 
 USER 0
@@ -7,14 +7,27 @@ ARG MAVEN_VERSION_ARG=3.9.12
 ARG CHROME_VERSION_ARG=152.0.7977.64
 ARG JMETER_VERSION_ARG=5.6.3
 
-# ---- JDK ----
+# Dois COPY (diretorios distintos do contexto do build); todo o resto acontece
+# no RUN unico abaixo, com dono/modo finais aplicados por "install".
+COPY scripts/  /tmp/build-scripts/
+COPY examples/ /tmp/build-examples/
+
 RUN set -euo pipefail; \
     PM="microdnf"; command -v microdnf >/dev/null 2>&1 || PM="dnf"; \
-    $PM install -y java-25-openjdk-devel; \
-    $PM clean all;
-
-# ---- Maven ----
-RUN set -euo pipefail; \
+    \
+    echo "=== JDK 25 + dependencias de runtime do Chrome ==="; \
+    PKGS="nss nspr atk at-spi2-atk cups-libs libdrm libxkbcommon \
+          libXcomposite libXdamage libXrandr mesa-libgbm alsa-lib pango cairo"; \
+    if rpm -q java-25-openjdk-devel >/dev/null 2>&1; then \
+      echo "java-25-openjdk-devel ja presente na imagem base"; \
+    else \
+      PKGS="java-25-openjdk-devel $PKGS"; \
+    fi; \
+    $PM install -y $PKGS; \
+    $PM clean all; \
+    rm -rf /var/cache/dnf /var/cache/yum; \
+    \
+    echo "=== Maven ${MAVEN_VERSION_ARG} ==="; \
     curl -fsSL -o /tmp/maven.tgz \
       "https://archive.apache.org/dist/maven/maven-3/${MAVEN_VERSION_ARG}/binaries/apache-maven-${MAVEN_VERSION_ARG}-bin.tar.gz"; \
     mkdir -p /opt/maven; \
@@ -22,19 +35,9 @@ RUN set -euo pipefail; \
     ln -s "/opt/maven/apache-maven-${MAVEN_VERSION_ARG}" /opt/maven/current; \
     ln -sf /opt/maven/current/bin/mvn /usr/local/bin/mvn; \
     rm -f /tmp/maven.tgz; \
-    chown -R 10001:0 /opt/maven
-
-# ---- Chrome runtime dependencies ----
-RUN set -euo pipefail; \
-    PM="microdnf"; command -v microdnf >/dev/null 2>&1 || PM="dnf"; \
-    $PM install -y \
-      nss nspr atk at-spi2-atk cups-libs libdrm libxkbcommon \
-      libXcomposite libXdamage libXrandr mesa-libgbm alsa-lib \
-      pango cairo; \
-    $PM clean all
-
-# ---- Chrome for Testing + chromedriver (paired version) ----
-RUN set -euo pipefail; \
+    chown -R 10001:0 /opt/maven; \
+    \
+    echo "=== Chrome for Testing + chromedriver ${CHROME_VERSION_ARG} ==="; \
     mkdir -p /opt/chrome; \
     curl -fsSL -o /tmp/chrome.zip \
       "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION_ARG}/linux64/chrome-linux64.zip"; \
@@ -51,10 +54,9 @@ RUN set -euo pipefail; \
     ln -sf "/opt/chrome/chromedriver-${CHROME_VERSION_ARG}/chromedriver" /usr/local/bin/chromedriver; \
     rm -rf /tmp/chromedriver.zip /tmp/chromedriver-unpack; \
     \
-    chown -R 10001:0 /opt/chrome
-
-# ---- Apache JMeter ----
-RUN set -euo pipefail; \
+    chown -R 10001:0 /opt/chrome; \
+    \
+    echo "=== Apache JMeter ${JMETER_VERSION_ARG} ==="; \
     curl -fsSL -o /tmp/jmeter.tgz \
       "https://archive.apache.org/dist/jmeter/binaries/apache-jmeter-${JMETER_VERSION_ARG}.tgz"; \
     mkdir -p /opt/jmeter; \
@@ -62,25 +64,23 @@ RUN set -euo pipefail; \
     ln -s "/opt/jmeter/apache-jmeter-${JMETER_VERSION_ARG}" /opt/jmeter/current; \
     rm -f /tmp/jmeter.tgz; \
     chown -R 10001:0 /opt/jmeter; \
-    chmod -R g+rwX /opt/jmeter
-
-# ---- Utilitarios de troca de JDK + wrapper do JMeter ----
-COPY --chmod=0644 scripts/use-java.sh /etc/profile.d/05-java-versions.sh
-COPY --chmod=0755 scripts/with-java /usr/local/bin/with-java
-COPY --chmod=0755 scripts/jmeter-wrapper.sh /usr/local/bin/jmeter
-
-# ---- Plano JMeter de exemplo (smoke test sem egress) ----
-COPY --chmod=0644 examples/index.html examples/smoke-plan.jmx /opt/jmeter/examples/
-
-# ---- Scripts shell + dotfiles ----
-COPY --chown=10001:0 --chmod=0644 \
-     scripts/.bashrc \
-     scripts/devspaces-environment.sh \
-     scripts/devspaces-setup.sh \
-     /home/tooling/
-
-# ---- Environment config (profile.d) + permissoes + comandos devspaces-* ----
-RUN set -euo pipefail; \
+    chmod -R g+rwX /opt/jmeter; \
+    \
+    echo "=== Utilitarios de troca de JDK, wrapper do JMeter e plano de exemplo ==="; \
+    install -m 0644 /tmp/build-scripts/use-java.sh       /etc/profile.d/05-java-versions.sh; \
+    install -m 0755 /tmp/build-scripts/with-java         /usr/local/bin/with-java; \
+    install -m 0755 /tmp/build-scripts/jmeter-wrapper.sh /usr/local/bin/jmeter; \
+    install -d -m 0755 -o 10001 -g 0 /opt/jmeter/examples; \
+    install -m 0644 -o 10001 -g 0 /tmp/build-examples/index.html     /opt/jmeter/examples/index.html; \
+    install -m 0644 -o 10001 -g 0 /tmp/build-examples/smoke-plan.jmx /opt/jmeter/examples/smoke-plan.jmx; \
+    \
+    echo "=== Scripts shell + dotfiles ==="; \
+    install -m 0644 -o 10001 -g 0 /tmp/build-scripts/.bashrc                  /home/tooling/.bashrc; \
+    install -m 0755 -o 10001 -g 0 /tmp/build-scripts/devspaces-environment.sh /home/tooling/devspaces-environment.sh; \
+    install -m 0755 -o 10001 -g 0 /tmp/build-scripts/devspaces-setup.sh       /home/tooling/devspaces-setup.sh; \
+    install -m 0644 -o 10001 -g 0 /home/tooling/.bashrc                       /home/user/.bashrc; \
+    \
+    echo "=== Environment config (profile.d) + comandos devspaces-* ==="; \
     printf 'export JAVA_HOME="/usr/lib/jvm/java-21-openjdk";\nexport PATH="$JAVA_HOME/bin:$PATH";\n' \
       > /etc/profile.d/00-java-tools.sh; \
     printf 'export MAVEN_HOME="/opt/maven/current";\nexport PATH="$MAVEN_HOME/bin:$PATH";\n' \
@@ -99,12 +99,6 @@ RUN set -euo pipefail; \
       'fi' \
       >> /etc/bashrc; \
     \
-    chown -R 10001:0 /opt/jmeter/examples; \
-    \
-    chmod 0755 /home/tooling/devspaces-setup.sh /home/tooling/devspaces-environment.sh; \
-    \
-    install -m 0644 -o 10001 -g 0 /home/tooling/.bashrc       /home/user/.bashrc; \
-    \
     printf '%s\n' \
       '#!/usr/bin/env bash' \
       'exec bash /home/tooling/devspaces-setup.sh "$@"' \
@@ -113,7 +107,9 @@ RUN set -euo pipefail; \
       '#!/usr/bin/env bash' \
       'exec bash /home/tooling/devspaces-environment.sh "$@"' \
       > /usr/local/bin/devspaces-environment; \
-    chmod 0755 /usr/local/bin/devspaces-setup /usr/local/bin/devspaces-environment
+    chmod 0755 /usr/local/bin/devspaces-setup /usr/local/bin/devspaces-environment; \
+    \
+    rm -rf /tmp/build-scripts /tmp/build-examples
 
 ENV JAVA_HOME="/usr/lib/jvm/java-21-openjdk" \
     JAVA_HOME_25="/usr/lib/jvm/java-25-openjdk" \

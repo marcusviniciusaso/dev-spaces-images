@@ -1,4 +1,4 @@
-ARG BASE_IMAGE=quay.io/marolive/custom-udi:3.0.11
+ARG BASE_IMAGE=quay.io/marolive/custom-udi:3.1.1
 FROM ${BASE_IMAGE}
 
 USER 0
@@ -8,6 +8,9 @@ ARG PYTHON312_VERSION_ARG=3.12.14
 ARG PYTHON313_VERSION_ARG=3.13.15
 ARG PYTHON314_VERSION_ARG=3.14.7
 ARG PYTHON_DEFAULT_MINOR_ARG=3.12
+
+# Um unico COPY: os scripts sao instalados no RUN abaixo com dono/modo finais.
+COPY scripts/ /tmp/build-scripts/
 
 # ---- Python (3.9 / 3.12 / 3.13 / 3.14) ----
 # Cada versao vem do gerenciador de pacotes quando existe pacote; so cai para
@@ -100,26 +103,16 @@ RUN set -euo pipefail; \
     echo "=== Versao padrao: ${PYTHON_DEFAULT_MINOR_ARG} -> ${FULL_DEFAULT} ==="; \
     \
     $PM clean all; \
-    rm -rf /var/cache/dnf /var/cache/yum /tmp/* /root/.cache; \
+    rm -rf /var/cache/dnf /var/cache/yum /root/.cache; \
     chown -R 10001:0 /opt/python; \
-    chmod -R g=u /opt/python
-
-# ---- Utilitarios de troca de versao do Python ----
-COPY --chmod=0644 scripts/py-common.sh      /usr/local/bin/py-common.sh
-COPY --chmod=0755 scripts/pyuse.sh          /usr/local/bin/pyuse
-COPY --chmod=0755 scripts/pylist.sh         /usr/local/bin/pylist
-COPY --chmod=0755 scripts/python-wrapper.sh /opt/pyshims/python
-COPY --chmod=0755 scripts/pip-wrapper.sh    /opt/pyshims/pip
-
-# ---- Scripts shell + dotfiles ----
-COPY --chown=10001:0 --chmod=0644 \
-     scripts/.bashrc \
-     scripts/devspaces-environment.sh \
-     scripts/devspaces-setup.sh \
-     /home/tooling/
-
-# ---- Environment config (profile.d) + permissoes + comandos devspaces-* ----
-RUN set -euo pipefail; \
+    chmod -R g=u /opt/python; \
+    \
+    echo "=== Utilitarios de troca de versao do Python ==="; \
+    install -m 0644 /tmp/build-scripts/py-common.sh /usr/local/bin/py-common.sh; \
+    install -m 0755 /tmp/build-scripts/pyuse.sh     /usr/local/bin/pyuse; \
+    install -m 0755 /tmp/build-scripts/pylist.sh    /usr/local/bin/pylist; \
+    install -D -m 0755 /tmp/build-scripts/python-wrapper.sh /opt/pyshims/python; \
+    install -D -m 0755 /tmp/build-scripts/pip-wrapper.sh    /opt/pyshims/pip; \
     ln -sf /opt/pyshims/python /opt/pyshims/python3; \
     ln -sf /opt/pyshims/pip    /opt/pyshims/pip3; \
     ln -sf /opt/pyshims/python /usr/local/bin/python; \
@@ -150,9 +143,11 @@ RUN set -euo pipefail; \
     chown -R 10001:0 /home/user/.python; \
     chmod -R g=u /home/user/.python; \
     \
-    chmod 0755 /home/tooling/devspaces-setup.sh /home/tooling/devspaces-environment.sh; \
-    \
-    install -m 0644 -o 10001 -g 0 /home/tooling/.bashrc /home/user/.bashrc; \
+    echo "=== Scripts shell + dotfiles + comandos devspaces-* ==="; \
+    install -m 0644 -o 10001 -g 0 /tmp/build-scripts/.bashrc                  /home/tooling/.bashrc; \
+    install -m 0755 -o 10001 -g 0 /tmp/build-scripts/devspaces-environment.sh /home/tooling/devspaces-environment.sh; \
+    install -m 0755 -o 10001 -g 0 /tmp/build-scripts/devspaces-setup.sh       /home/tooling/devspaces-setup.sh; \
+    install -m 0644 -o 10001 -g 0 /home/tooling/.bashrc                       /home/user/.bashrc; \
     \
     printf '%s\n' \
       '#!/usr/bin/env bash' \
@@ -166,7 +161,9 @@ RUN set -euo pipefail; \
       '#!/usr/bin/env bash' \
       'exec cat /etc/devspaces-linux-release' \
       > /usr/local/bin/devspaces-linux-release; \
-    chmod 0755 /usr/local/bin/devspaces-setup /usr/local/bin/devspaces-environment /usr/local/bin/devspaces-linux-release
+    chmod 0755 /usr/local/bin/devspaces-setup /usr/local/bin/devspaces-environment /usr/local/bin/devspaces-linux-release; \
+    \
+    rm -rf /tmp/build-scripts /tmp/*
 
 # /opt/pyshims vai no INICIO do PATH: na base o /usr/bin vem antes do
 # /usr/local/bin, entao wrappers colocados so em /usr/local/bin ficariam

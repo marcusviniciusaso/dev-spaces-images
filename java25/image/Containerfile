@@ -1,4 +1,4 @@
-ARG BASE_IMAGE=quay.io/marolive/custom-udi:3.0.11
+ARG BASE_IMAGE=quay.io/marolive/custom-udi:3.1.1
 FROM ${BASE_IMAGE}
 
 USER 0
@@ -7,14 +7,22 @@ ARG MAVEN_VERSION_ARG=3.9.12
 ARG GRADLE_VERSION_ARG=9.3.1
 ARG SPRING_BOOT_VERSION_ARG=4.0.3
 
-# ---- JDK ----
+# Um unico COPY: os scripts sao instalados no RUN abaixo com dono/modo finais.
+COPY scripts/ /tmp/build-scripts/
+
 RUN set -euo pipefail; \
     PM="microdnf"; command -v microdnf >/dev/null 2>&1 || PM="dnf"; \
-    $PM install -y java-25-openjdk-devel; \
-    $PM clean all;
-
-# ---- Maven + Gradle + Spring Boot CLI ----
-RUN set -euo pipefail; \
+    \
+    echo "=== JDK 25 ==="; \
+    if rpm -q java-25-openjdk-devel >/dev/null 2>&1; then \
+      echo "java-25-openjdk-devel ja presente na imagem base; reaproveitando"; \
+    else \
+      $PM install -y java-25-openjdk-devel; \
+      $PM clean all; \
+      rm -rf /var/cache/dnf /var/cache/yum; \
+    fi; \
+    \
+    echo "=== Maven ${MAVEN_VERSION_ARG} ==="; \
     curl -fsSL -o /tmp/maven.tgz \
       "https://archive.apache.org/dist/maven/maven-3/${MAVEN_VERSION_ARG}/binaries/apache-maven-${MAVEN_VERSION_ARG}-bin.tar.gz"; \
     mkdir -p /opt/maven; \
@@ -24,6 +32,7 @@ RUN set -euo pipefail; \
     rm -f /tmp/maven.tgz; \
     chown -R 10001:0 /opt/maven; \
     \
+    echo "=== Gradle ${GRADLE_VERSION_ARG} ==="; \
     curl -fsSL -o /tmp/gradle.zip \
       "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION_ARG}-bin.zip"; \
     mkdir -p /opt/gradle; \
@@ -33,23 +42,16 @@ RUN set -euo pipefail; \
     rm -f /tmp/gradle.zip; \
     chown -R 10001:0 /opt/gradle; \
     \
+    echo "=== Spring Boot CLI ${SPRING_BOOT_VERSION_ARG} ==="; \
     curl -fsSL -o /tmp/sbcli.tgz \
       "https://repo.maven.apache.org/maven2/org/springframework/boot/spring-boot-cli/${SPRING_BOOT_VERSION_ARG}/spring-boot-cli-${SPRING_BOOT_VERSION_ARG}-bin.tar.gz"; \
     mkdir -p /opt/spring-boot-cli; \
     tar -C /opt/spring-boot-cli -xzf /tmp/sbcli.tgz; \
     ln -sf "/opt/spring-boot-cli/spring-${SPRING_BOOT_VERSION_ARG}/bin/spring" /usr/local/bin/spring; \
     rm -f /tmp/sbcli.tgz; \
-    chown -R 10001:0 /opt/spring-boot-cli
-
-# ---- Scripts shell + dotfiles ----
-COPY --chown=10001:0 --chmod=0644 \
-     scripts/.bashrc \
-     scripts/devspaces-environment.sh \
-     scripts/devspaces-setup.sh \
-     /home/tooling/
-
-# ---- Environment config (profile.d) + permissoes + comandos devspaces-* ----
-RUN set -euo pipefail; \
+    chown -R 10001:0 /opt/spring-boot-cli; \
+    \
+    echo "=== Environment config (profile.d) ==="; \
     printf 'export JAVA_HOME="/usr/lib/jvm/java-25-openjdk";\nexport PATH="$JAVA_HOME/bin:$PATH";\n' \
       > /etc/profile.d/00-java-tools.sh; \
     printf 'export MAVEN_HOME="/opt/maven/current";\nexport PATH="$MAVEN_HOME/bin:$PATH";\n' \
@@ -58,9 +60,11 @@ RUN set -euo pipefail; \
       > /etc/profile.d/11-gradle.sh; \
     chmod 0644 /etc/profile.d/00-java-tools.sh /etc/profile.d/10-maven.sh /etc/profile.d/11-gradle.sh; \
     \
-    chmod 0755 /home/tooling/devspaces-setup.sh /home/tooling/devspaces-environment.sh; \
-    \
-    install -m 0644 -o 10001 -g 0 /home/tooling/.bashrc /home/user/.bashrc; \
+    echo "=== Scripts shell + dotfiles + comandos devspaces-* ==="; \
+    install -m 0644 -o 10001 -g 0 /tmp/build-scripts/.bashrc                  /home/tooling/.bashrc; \
+    install -m 0755 -o 10001 -g 0 /tmp/build-scripts/devspaces-environment.sh /home/tooling/devspaces-environment.sh; \
+    install -m 0755 -o 10001 -g 0 /tmp/build-scripts/devspaces-setup.sh       /home/tooling/devspaces-setup.sh; \
+    install -m 0644 -o 10001 -g 0 /home/tooling/.bashrc                       /home/user/.bashrc; \
     \
     printf '%s\n' \
       '#!/usr/bin/env bash' \
@@ -74,7 +78,9 @@ RUN set -euo pipefail; \
       '#!/usr/bin/env bash' \
       'exec cat /etc/devspaces-linux-release' \
       > /usr/local/bin/devspaces-linux-release; \
-    chmod 0755 /usr/local/bin/devspaces-setup /usr/local/bin/devspaces-environment /usr/local/bin/devspaces-linux-release
+    chmod 0755 /usr/local/bin/devspaces-setup /usr/local/bin/devspaces-environment /usr/local/bin/devspaces-linux-release; \
+    \
+    rm -rf /tmp/build-scripts
 
 ENV JAVA_HOME="/usr/lib/jvm/java-25-openjdk" \
     USE_JAVA25="true" \

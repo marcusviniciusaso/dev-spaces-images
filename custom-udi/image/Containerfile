@@ -8,12 +8,24 @@ ARG OCP_VERSION=4.20.27
 ARG HELM_VERSION=v3.16.2
 ARG KIND_VERSION=v0.26.0
 
-COPY --chown=user:root --chmod=755 scripts/entrypoint.sh /entrypoint.sh
-COPY --chmod=0644 scripts/release-notes.yaml /etc/devspaces-linux-release
-COPY --chown=user:user scripts/dot_bash_aliases /home/user/.bash_aliases
-COPY --chown=user:root --chmod=755 scripts/podman-login /usr/local/bin/podman-login
+# Um unico COPY: os arquivos sao instalados no RUN abaixo com dono/modo finais.
+COPY scripts/ /tmp/build-scripts/
 
+# O RUN abaixo grava um devspaces-tooling.pth em site-packages do sistema.
+# Motivo: a UDI guarda o tooling Python real em /home/tooling/.local/... e o
+# expoe em /home/user/.local/... (user-site) por symlinks. Qualquer devfile que
+# defina PYTHONUSERBASE -- o custom-udi-python define, para persistir
+# "pip install --user" no volume -- tira o user-site do sys.path e derruba
+# junto podman-compose, cekit, yq, flake8, pytest, pycodestyle, pyflakes e
+# virtualenv. O .pth aponta para o diretorio real, que nao e user-site, e por
+# isso independe da variavel. Fica so no site-packages do python do sistema,
+# entao nao vaza para os interpretadores gerenciados pelo pyuse.
 RUN set -euo pipefail; \
+    install -m 0755 -o user -g root /tmp/build-scripts/entrypoint.sh      /entrypoint.sh; \
+    install -m 0644 -o root -g root /tmp/build-scripts/release-notes.yaml /etc/devspaces-linux-release; \
+    install -m 0664 -o user -g user /tmp/build-scripts/dot_bash_aliases   /home/user/.bash_aliases; \
+    install -m 0755 -o user -g root /tmp/build-scripts/podman-login       /usr/local/bin/podman-login; \
+    \
     arch="${TARGETARCH:-}"; \
     if [ -z "$arch" ]; then \
       uarch="$(uname -m)"; \
@@ -45,10 +57,12 @@ RUN set -euo pipefail; \
     rm -rf /var/cache/dnf /var/cache/yum; \
     \
     curl -fsSL -o /tmp/ocp-client.tar.gz \
-      "https://mirror.openshift.com/pub/openshift-v4/clients/ocp/stable-4.20/openshift-client-linux.tar.gz"; \
+      "https://mirror.openshift.com/pub/openshift-v4/clients/ocp/stable-${OCP_VERSION%.*}/openshift-client-linux.tar.gz"; \
     tar -C /tmp -xzf /tmp/ocp-client.tar.gz; \
-    install -m 0755 /tmp/oc /usr/local/bin/oc; \
-    if [ -f /tmp/kubectl ]; then install -m 0755 /tmp/kubectl /usr/local/bin/kubectl; fi; \
+    install -m 0755 /tmp/oc /usr/bin/oc; \
+    ln -sf ./oc /usr/bin/kubectl; \
+    ln -sf /usr/bin/oc /usr/local/bin/oc; \
+    ln -sf /usr/bin/oc /usr/local/bin/kubectl; \
     rm -rf /tmp/oc /tmp/kubectl /tmp/README.md /tmp/ocp-client.tar.gz; \
     \
     curl -fsSL -o /tmp/helm.tgz \
@@ -66,6 +80,22 @@ RUN set -euo pipefail; \
     /opt/podman-mcp/bin/pip install --no-cache-dir --upgrade pip; \
     /opt/podman-mcp/bin/pip install --no-cache-dir podman-mcp 'mcp>=1.0.0,<2'; \
     ln -s /opt/podman-mcp/bin/podman-mcp /usr/local/bin/podman-mcp; \
+    \
+    tooling_py=""; \
+    for sp in /home/tooling/.local/lib/python3.*/site-packages \
+              /home/tooling/.local/lib64/python3.*/site-packages; do \
+      [ -d "$sp" ] || continue; \
+      pyv="$(basename "$(dirname "$sp")")"; \
+      dst="/usr/local/lib/${pyv}/site-packages"; \
+      mkdir -p "$dst"; \
+      grep -qxF "$sp" "$dst/devspaces-tooling.pth" 2>/dev/null \
+        || echo "$sp" >> "$dst/devspaces-tooling.pth"; \
+      chmod 0644 "$dst/devspaces-tooling.pth"; \
+      tooling_py="$pyv"; \
+    done; \
+    test -n "$tooling_py"; \
+    PYTHONUSERBASE=/nonexistent "/usr/bin/${tooling_py}" \
+      -c 'import yaml, yq, flake8, pytest, virtualenv, pycodestyle, pyflakes, xmltodict'; \
     \
     curl -fsSL https://gh.io/copilot-install | bash; \
     \
@@ -193,6 +223,6 @@ LABEL org.opencontainers.image.title="Dev Spaces Custom UDI" \
       org.opencontainers.image.description="UDI customizada para Dev Spaces 3.28" \
       org.opencontainers.image.source="https://github.com/marcusviniciusaso/custom-udi" \
       org.opencontainers.image.vendor="Red Hat (sample)" \
-      org.opencontainers.image.version="3.0.11"
+      org.opencontainers.image.version="3.1.1"
 
 USER 10001

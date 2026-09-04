@@ -1,4 +1,4 @@
-ARG BASE_IMAGE=quay.io/marolive/custom-udi:3.0.11
+ARG BASE_IMAGE=quay.io/marolive/custom-udi:3.1.1
 FROM ${BASE_IMAGE}
 
 USER 0
@@ -8,7 +8,9 @@ ARG NODE24_VERSION_ARG=24.18.0
 ARG NODE25_VERSION_ARG=25.9.0
 ARG NODE_DEFAULT_MAJOR_ARG=24
 
-# ---- Node.js (22 / 24 / 25) ----
+# Um unico COPY: os scripts sao instalados no RUN abaixo com dono/modo finais.
+COPY scripts/ /tmp/build-scripts/
+
 RUN set -euo pipefail; \
     PM="microdnf"; command -v microdnf >/dev/null 2>&1 || PM="dnf"; \
     $PM install -y xz tar; \
@@ -28,6 +30,7 @@ RUN set -euo pipefail; \
       *) echo "Unsupported TARGETARCH: $arch" && exit 1 ;; \
     esac; \
     for node_version in "${NODE22_VERSION_ARG}" "${NODE24_VERSION_ARG}" "${NODE25_VERSION_ARG}"; do \
+      echo "=== Node.js ${node_version} ==="; \
       curl -fsSL -o /tmp/node.tar.xz \
         "https://nodejs.org/dist/v${node_version}/node-v${node_version}-linux-${node_arch}.tar.xz"; \
       mkdir -p "/opt/node/versions/${node_version}"; \
@@ -37,23 +40,15 @@ RUN set -euo pipefail; \
     done; \
     chown -R 10001:0 /opt/node; \
     chmod -R g=u /opt/node; \
-    rm -rf /home/user/.npm
-
-# ---- Utilitarios de troca de versao do Node ----
-COPY --chmod=0644 scripts/fnm-common.sh    /usr/local/bin/fnm-common.sh
-COPY --chmod=0755 scripts/nodeuse.sh       /usr/local/bin/nodeuse
-COPY --chmod=0755 scripts/nodelist.sh      /usr/local/bin/nodelist
-COPY --chmod=0755 scripts/node-versions.sh /usr/local/bin/node-versions
-
-# ---- Scripts shell + dotfiles ----
-COPY --chown=10001:0 --chmod=0644 \
-     scripts/.bashrc \
-     scripts/devspaces-environment.sh \
-     scripts/devspaces-setup.sh \
-     /home/tooling/
-
-# ---- Environment config (profile.d) + permissoes + comandos devspaces-* ----
-RUN set -euo pipefail; \
+    rm -rf /home/user/.npm; \
+    \
+    echo "=== Utilitarios de troca de versao do Node ==="; \
+    install -m 0644 /tmp/build-scripts/fnm-common.sh    /usr/local/bin/fnm-common.sh; \
+    install -m 0755 /tmp/build-scripts/nodeuse.sh       /usr/local/bin/nodeuse; \
+    install -m 0755 /tmp/build-scripts/nodelist.sh      /usr/local/bin/nodelist; \
+    install -m 0755 /tmp/build-scripts/node-versions.sh /usr/local/bin/node-versions; \
+    \
+    echo "=== Environment config (profile.d) ==="; \
     printf '%s\n' \
       'export NODE_VERSION_DIR="/opt/node/versions"' \
       'if [ -d /home/user/persistent ] && [ -w /home/user/persistent ]; then' \
@@ -75,9 +70,11 @@ RUN set -euo pipefail; \
     chown -R 10001:0 /home/user/.node; \
     chmod -R g=u /home/user/.node; \
     \
-    chmod 0755 /home/tooling/devspaces-setup.sh /home/tooling/devspaces-environment.sh; \
-    \
-    install -m 0644 -o 10001 -g 0 /home/tooling/.bashrc /home/user/.bashrc; \
+    echo "=== Scripts shell + dotfiles + comandos devspaces-* ==="; \
+    install -m 0644 -o 10001 -g 0 /tmp/build-scripts/.bashrc                  /home/tooling/.bashrc; \
+    install -m 0755 -o 10001 -g 0 /tmp/build-scripts/devspaces-environment.sh /home/tooling/devspaces-environment.sh; \
+    install -m 0755 -o 10001 -g 0 /tmp/build-scripts/devspaces-setup.sh       /home/tooling/devspaces-setup.sh; \
+    install -m 0644 -o 10001 -g 0 /home/tooling/.bashrc                       /home/user/.bashrc; \
     \
     printf '%s\n' \
       '#!/usr/bin/env bash' \
@@ -91,7 +88,9 @@ RUN set -euo pipefail; \
       '#!/usr/bin/env bash' \
       'exec cat /etc/devspaces-linux-release' \
       > /usr/local/bin/devspaces-linux-release; \
-    chmod 0755 /usr/local/bin/devspaces-setup /usr/local/bin/devspaces-environment /usr/local/bin/devspaces-linux-release
+    chmod 0755 /usr/local/bin/devspaces-setup /usr/local/bin/devspaces-environment /usr/local/bin/devspaces-linux-release; \
+    \
+    rm -rf /tmp/build-scripts
 
 ENV NODE_VERSION_DIR="/opt/node/versions" \
     NODE_STATE_DIR="/home/user/.node" \
