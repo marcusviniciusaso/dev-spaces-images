@@ -1,9 +1,11 @@
 services:
   udi-ansible:
+    platform: linux/amd64
     build:
       context: .
       dockerfile: Containerfile
       args:
         BASE_IMAGE: ${BASE_IMAGE}
-        ADT_VERSION: ${ADT_VERSION}
+        ADT_VERSION_ARG: ${ADT_VERSION_ARG}
+        ANSIBLE_CORE_VERSION_ARG: ${ANSIBLE_CORE_VERSION_ARG}
     image: quay.io/${QUAY_ORG}/${IMAGE_NAME}:${IMAGE_TAG}

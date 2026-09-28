@@ -1,48 +1,85 @@
-ARG BASE_IMAGE=quay.io/marolive/custom-udi:1.2.7
-
+ARG BASE_IMAGE=quay.io/marolive/custom-udi:3.1.1
 FROM ${BASE_IMAGE}
 
 USER 0
 
-ARG ADT_VERSION=26.3.1
+ARG ADT_VERSION_ARG=26.9.0
+ARG ANSIBLE_CORE_VERSION_ARG=2.21.4
 
-COPY scripts/requirements.txt scripts/requirements.yml /tmp/
+# Um unico COPY: os scripts sao instalados no RUN abaixo com dono/modo finais.
+COPY scripts/ /tmp/build-scripts/
 
+# ---- Ansible (ansible-dev-tools em venv Python 3.12) ----
+# O ansible-core 2.21 exige Python >= 3.12 no controller. O ADT vai num venv
+# isolado em /opt/ansible: nada e instalado no Python do sistema, do qual
+# podman-compose, cekit e podman-mcp da imagem base dependem.
+#
+# O venv NAO entra no inicio do PATH: /opt/ansible/bin tem python/python3/pip,
+# que sombreariam o /usr/bin/python3 do sistema. Os entrypoints das ferramentas
+# sao expostos em /usr/local/bin (ver o ENV PATH no fim do arquivo).
 RUN set -euo pipefail; \
     PM="microdnf"; command -v microdnf >/dev/null 2>&1 || PM="dnf"; \
-    EXCLUDE=""; [ "$PM" = "dnf" ] && EXCLUDE="--exclude container-selinux"; \
-    $PM install -y $EXCLUDE \
-      buildah \
-      crun \
-      fuse-overlayfs \
+    $PM install -y \
+      python3.12 \
+      python3.12-devel \
+      python3.12-pip \
       gcc \
-      libssh-devel \
-      ncurses \
-      openssh-clients \
-      python3-cffi \
-      python3-devel \
-      skopeo \
-      util-linux-user \
-      which \
-      zsh \
-      pinentry; \
+      openssh-clients; \
     $PM clean all; \
-    arch="$(uname -m)"; \
-    curl -fsSL -o /usr/local/bin/dumb-init \
-      "https://github.com/Yelp/dumb-init/releases/download/v1.2.5/dumb-init_1.2.5_${arch}"; \
-    chmod 0755 /usr/local/bin/dumb-init; \
-    rm -rf /home/tooling/.local/lib/python3.*/site-packages/attr* \
-           /home/user/.local/lib/python3.*/site-packages/attr* \
-           /usr/lib/python3.*/site-packages/attr* \
-           /usr/lib64/python3.*/site-packages/attr*; \
-    pip3 install --no-cache-dir -U \
-      "ansible-dev-tools==${ADT_VERSION}" \
-      -r /tmp/requirements.txt; \
-    ansible-galaxy collection install -r /tmp/requirements.yml; \
-    mkdir -p /home/user/.ansible/roles /usr/share/ansible/roles /etc/ansible/roles; \
-    rm -f /tmp/requirements.txt /tmp/requirements.yml
+    rm -rf /var/cache/dnf /var/cache/yum; \
+    \
+    python3.12 -m venv /opt/ansible; \
+    /opt/ansible/bin/pip install --no-cache-dir --upgrade pip; \
+    /opt/ansible/bin/pip install --no-cache-dir \
+      "ansible-dev-tools==${ADT_VERSION_ARG}" \
+      "ansible-core==${ANSIBLE_CORE_VERSION_ARG}"; \
+    \
+    for bin in /opt/ansible/bin/*; do \
+      name="$(basename "$bin")"; \
+      case "$name" in \
+        python*|pip*|activate*|Activate*|deactivate) continue ;; \
+      esac; \
+      [ -f "$bin" ] && [ -x "$bin" ] || continue; \
+      ln -sf "$bin" "/usr/local/bin/$name"; \
+    done; \
+    test "$(command -v ansible)" = /usr/local/bin/ansible; \
+    for tool in ansible-playbook ansible-galaxy ansible-lint ansible-navigator ansible-builder molecule ansible-creator; do \
+      command -v "$tool" >/dev/null; \
+    done; \
+    /usr/bin/python3 -c 'import sys; assert sys.prefix == "/usr"'; \
+    \
+    mkdir -p /usr/share/ansible/collections /usr/share/ansible/roles /etc/ansible; \
+    chown -R 10001:0 /opt/ansible /usr/share/ansible; \
+    chmod -R g=u /opt/ansible /usr/share/ansible; \
+    \
+    echo "=== Scripts shell + dotfiles + comandos devspaces-* ==="; \
+    install -m 0644 -o 10001 -g 0 /tmp/build-scripts/.bashrc                  /home/tooling/.bashrc; \
+    install -m 0755 -o 10001 -g 0 /tmp/build-scripts/devspaces-environment.sh /home/tooling/devspaces-environment.sh; \
+    install -m 0755 -o 10001 -g 0 /tmp/build-scripts/devspaces-setup.sh       /home/tooling/devspaces-setup.sh; \
+    install -m 0644 -o 10001 -g 0 /home/tooling/.bashrc                       /home/user/.bashrc; \
+    \
+    printf '%s\n' \
+      '#!/usr/bin/env bash' \
+      'exec bash /home/tooling/devspaces-setup.sh "$@"' \
+      > /usr/local/bin/devspaces-setup; \
+    printf '%s\n' \
+      '#!/usr/bin/env bash' \
+      'exec bash /home/tooling/devspaces-environment.sh "$@"' \
+      > /usr/local/bin/devspaces-environment; \
+    printf '%s\n' \
+      '#!/usr/bin/env bash' \
+      'exec cat /etc/devspaces-linux-release' \
+      > /usr/local/bin/devspaces-linux-release; \
+    chmod 0755 /usr/local/bin/devspaces-setup /usr/local/bin/devspaces-environment /usr/local/bin/devspaces-linux-release; \
+    \
+    rm -rf /tmp/build-scripts /tmp/* /root/.cache
 
-ENV ANSIBLE_DEV_TOOLS_CONTAINER=1 \
+# /opt/ansible/bin vai no FIM do PATH: o ansible-lint exige o bin do proprio
+# venv em algum ponto do PATH (senao avisa "PATH altered ... broken local setup"
+# a cada execucao); no fim ele nao sombreia o python3/pip do sistema.
+ENV PATH="${PATH}:/opt/ansible/bin" \
+    ANSIBLE_PYTHON_INTERPRETER=auto_silent \
+    ANSIBLE_DEV_TOOLS_CONTAINER=1 \
     BUILDAH_ISOLATION=chroot
 
 USER 10001
