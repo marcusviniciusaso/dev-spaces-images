@@ -92,9 +92,9 @@ fi
 PODMAN_RUNROOT="/tmp/containers-$(id -u)/runroot"
 mkdir -p "$XDG_CONFIG_HOME/containers" "$PODMAN_RUNROOT" "$PODMAN_GRAPHROOT"
 
-# Persist podman login credentials across pause/resume
-if [ -n "${CONTAINERS_STORAGE:-}" ]; then
-	export REGISTRY_AUTH_FILE="${REGISTRY_AUTH_FILE:-$(dirname "$CONTAINERS_STORAGE")/.containers/auth.json}"
+# Persist podman login credentials across pause/resume.
+if [ -d /home/user/persistent ] && [ -w /home/user/persistent ]; then
+	export REGISTRY_AUTH_FILE="${REGISTRY_AUTH_FILE:-/home/user/persistent/.config/containers/auth.json}"
 else
 	export REGISTRY_AUTH_FILE="${REGISTRY_AUTH_FILE:-$XDG_CONFIG_HOME/containers/auth.json}"
 fi
@@ -136,11 +136,6 @@ if [ -d /home/user/persistent ] && [ -w /home/user/persistent ]; then
     mkdir -p "$(dirname "$KUBECONFIG")"
 fi
 
-# Ansible: collections, roles e credenciais do Automation Hub em persistent
-# storage para sobreviver a pause/resume. /usr/share/ansible/collections fica
-# no fim do path como fallback para o que vier embutido na imagem.
-# ANSIBLE_ROLES_PATH NAO e exportado de proposito: env vence o ansible.cfg e
-# anularia o roles_path do projeto. O default do Ansible ja usa $ANSIBLE_HOME/roles.
 if [ -d /home/user/persistent ] && [ -w /home/user/persistent ]; then
     export ANSIBLE_HOME="${ANSIBLE_HOME:-/home/user/persistent/.ansible}"
 else
@@ -150,7 +145,7 @@ export ANSIBLE_COLLECTIONS_PATH="${ANSIBLE_COLLECTIONS_PATH:-$ANSIBLE_HOME/colle
 export ANSIBLE_LOCAL_TEMP="${ANSIBLE_LOCAL_TEMP:-/tmp/.ansible-$(id -u)/tmp}"
 mkdir -p "$ANSIBLE_HOME/collections" "$ANSIBLE_HOME/roles" "$ANSIBLE_LOCAL_TEMP" 2>/dev/null || true
 
-# Servidor Galaxy (Automation Hub) gravado pelo devspaces-setup.
+# Galaxy Server (Automation Hub)
 if [ -r "$ANSIBLE_HOME/galaxy.env" ]; then
     . "$ANSIBLE_HOME/galaxy.env"
 fi
@@ -177,6 +172,17 @@ elif [ -f /home/tooling/.bash_aliases ]; then
 elif [ -f /home/user/.bash_aliases ]; then
     . /home/user/.bash_aliases
 fi
+
+podman-login() {
+        local registry="${1:-}"
+        if [ -z "$registry" ]; then
+                read -r -p "Registry [${CONTAINER_REGISTRY:-quay.io}]: " registry
+                registry="${registry:-${CONTAINER_REGISTRY:-quay.io}}"
+        fi
+        mkdir -p "$(dirname "$REGISTRY_AUTH_FILE")"
+        podman login --authfile "$REGISTRY_AUTH_FILE" "$registry"
+}
+jfrog-login() { podman-login "$@"; }
 
 # Ensure devspaces helper commands exist even if alias files were not loaded.
 if ! declare -F devspaces-environment >/dev/null 2>&1; then
