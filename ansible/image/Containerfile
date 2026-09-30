@@ -6,17 +6,9 @@ USER 0
 ARG ADT_VERSION_ARG=26.9.0
 ARG ANSIBLE_CORE_VERSION_ARG=2.21.4
 
-# Um unico COPY: os scripts sao instalados no RUN abaixo com dono/modo finais.
 COPY scripts/ /tmp/build-scripts/
 
 # ---- Ansible (ansible-dev-tools em venv Python 3.12) ----
-# O ansible-core 2.21 exige Python >= 3.12 no controller. O ADT vai num venv
-# isolado em /opt/ansible: nada e instalado no Python do sistema, do qual
-# podman-compose, cekit e podman-mcp da imagem base dependem.
-#
-# O venv NAO entra no inicio do PATH: /opt/ansible/bin tem python/python3/pip,
-# que sombreariam o /usr/bin/python3 do sistema. Os entrypoints das ferramentas
-# sao expostos em /usr/local/bin (ver o ENV PATH no fim do arquivo).
 RUN set -euo pipefail; \
     PM="microdnf"; command -v microdnf >/dev/null 2>&1 || PM="dnf"; \
     $PM install -y \
@@ -74,9 +66,6 @@ RUN set -euo pipefail; \
     \
     rm -rf /tmp/build-scripts /tmp/* /root/.cache
 
-# /opt/ansible/bin vai no FIM do PATH: o ansible-lint exige o bin do proprio
-# venv em algum ponto do PATH (senao avisa "PATH altered ... broken local setup"
-# a cada execucao); no fim ele nao sombreia o python3/pip do sistema.
 ENV PATH="${PATH}:/opt/ansible/bin" \
     ANSIBLE_PYTHON_INTERPRETER=auto_silent \
     ANSIBLE_DEV_TOOLS_CONTAINER=1 \
