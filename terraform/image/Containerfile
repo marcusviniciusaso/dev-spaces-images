@@ -1,0 +1,143 @@
+ARG BASE_IMAGE=quay.io/marolive/custom-udi:3.1.1
+FROM ${BASE_IMAGE}
+
+USER 0
+
+ARG TFENV_VERSION_ARG=3.2.2
+ARG TERRAFORM_VERSIONS_ARG="1.11.4 1.12.2 1.13.5 1.14.9"
+ARG TERRAFORM_DEFAULT_ARG=1.14.9
+ARG TFLINT_VERSION_ARG=0.64.0
+ARG TERRAFORM_DOCS_VERSION_ARG=0.24.0
+ARG TERRATEST_VERSION_ARG=2.0.0
+ARG RANDOM_PROVIDER_VERSION_ARG=3.9.1
+ARG LOCAL_PROVIDER_VERSION_ARG=2.9.1
+
+COPY scripts/ /tmp/build-scripts/
+
+# ---- Terraform (tfenv + tflint + terraform-docs + terratest) ----
+RUN set -euo pipefail; \
+    arch="${TARGETARCH:-}"; \
+    if [ -z "$arch" ]; then \
+      uarch="$(uname -m)"; \
+      case "$uarch" in \
+        x86_64) arch="amd64" ;; \
+        aarch64|arm64) arch="arm64" ;; \
+        *) echo "Unsupported arch: $uarch" && exit 1 ;; \
+      esac; \
+    fi; \
+    verify_sha256() { \
+      local file="$1" name="$2" sums="$3" sum; \
+      sum="$(awk -v f="$name" '$2 == f {print $1}' "$sums")"; \
+      test -n "$sum"; \
+      echo "${sum}  ${file}" | sha256sum -c -; \
+    }; \
+    export CHECKPOINT_DISABLE=1; \
+    \
+    echo "=== tfenv ${TFENV_VERSION_ARG} + Terraform ${TERRAFORM_VERSIONS_ARG} ==="; \
+    mkdir -p /opt/tfenv; \
+    curl -fsSL "https://github.com/tfutils/tfenv/archive/refs/tags/v${TFENV_VERSION_ARG}.tar.gz" \
+      | tar -xz -C /opt/tfenv --strip-components=1; \
+    ln -sf /opt/tfenv/bin/tfenv     /usr/local/bin/tfenv; \
+    ln -sf /opt/tfenv/bin/terraform /usr/local/bin/terraform; \
+    export TFENV_ROOT=/opt/tfenv TFENV_ARCH="$arch" TFENV_CURL_OUTPUT=0; \
+    for v in ${TERRAFORM_VERSIONS_ARG}; do \
+      tfenv install "$v"; \
+    done; \
+    tfenv use "${TERRAFORM_DEFAULT_ARG}"; \
+    test "$(terraform version -json | jq -r .terraform_version)" = "${TERRAFORM_DEFAULT_ARG}"; \
+    test "$(tfenv list | wc -l)" -eq "$(echo ${TERRAFORM_VERSIONS_ARG} | wc -w)"; \
+    \
+    echo "=== tflint ${TFLINT_VERSION_ARG} ==="; \
+    tl_url="https://github.com/terraform-linters/tflint/releases/download/v${TFLINT_VERSION_ARG}"; \
+    tl_zip="tflint_linux_${arch}.zip"; \
+    curl -fsSL -o "/tmp/${tl_zip}" "${tl_url}/${tl_zip}"; \
+    curl -fsSL -o /tmp/tflint.sums "${tl_url}/checksums.txt"; \
+    verify_sha256 "/tmp/${tl_zip}" "${tl_zip}" /tmp/tflint.sums; \
+    unzip -q -o "/tmp/${tl_zip}" -d /tmp/tflint; \
+    install -m 0755 /tmp/tflint/tflint /usr/local/bin/tflint; \
+    tflint --version; \
+    \
+    echo "=== terraform-docs ${TERRAFORM_DOCS_VERSION_ARG} ==="; \
+    td_url="https://github.com/terraform-docs/terraform-docs/releases/download/v${TERRAFORM_DOCS_VERSION_ARG}"; \
+    td_tgz="terraform-docs-v${TERRAFORM_DOCS_VERSION_ARG}-linux-${arch}.tar.gz"; \
+    curl -fsSL -o "/tmp/${td_tgz}" "${td_url}/${td_tgz}"; \
+    curl -fsSL -o /tmp/terraform-docs.sums "${td_url}/terraform-docs-v${TERRAFORM_DOCS_VERSION_ARG}.sha256sum"; \
+    verify_sha256 "/tmp/${td_tgz}" "${td_tgz}" /tmp/terraform-docs.sums; \
+    mkdir -p /tmp/terraform-docs; \
+    tar -xzf "/tmp/${td_tgz}" -C /tmp/terraform-docs; \
+    install -m 0755 /tmp/terraform-docs/terraform-docs /usr/local/bin/terraform-docs; \
+    terraform-docs --version; \
+    \
+    echo "=== Providers do sample (implied local mirror) ==="; \
+    for p in "random:${RANDOM_PROVIDER_VERSION_ARG}" "local:${LOCAL_PROVIDER_VERSION_ARG}"; do \
+      name="${p%%:*}"; ver="${p#*:}"; \
+      zip="terraform-provider-${name}_${ver}_linux_${arch}.zip"; \
+      dir="/usr/share/terraform/plugins/registry.terraform.io/hashicorp/${name}"; \
+      mkdir -p "$dir"; \
+      curl -fsSL -o "${dir}/${zip}" "https://releases.hashicorp.com/terraform-provider-${name}/${ver}/${zip}"; \
+      curl -fsSL -o "/tmp/${name}.sums" \
+        "https://releases.hashicorp.com/terraform-provider-${name}/${ver}/terraform-provider-${name}_${ver}_SHA256SUMS"; \
+      verify_sha256 "${dir}/${zip}" "${zip}" "/tmp/${name}.sums"; \
+    done; \
+    chmod -R a+rX /usr/share/terraform; \
+    \
+    echo "=== terratest ${TERRATEST_VERSION_ARG} (proxy Go local) ==="; \
+    test "$(go env GOVERSION | sed -E 's/^go1\.([0-9]+).*/\1/')" -ge 26; \
+    mkdir -p /tmp/terratest-cache; \
+    cd /tmp/terratest-cache; \
+    export GOPATH=/tmp/gopath GOMODCACHE=/tmp/gomodcache GOCACHE=/tmp/gocache \
+           GOFLAGS=-modcacherw GOPROXY=https://proxy.golang.org,direct; \
+    go mod init devspaces.local/terratest-cache; \
+    printf '%s\n' \
+      'package cache' \
+      'import (' \
+      '  "testing"' \
+      '  "github.com/gruntwork-io/terratest/modules/terraform/v2"' \
+      '  "github.com/stretchr/testify/assert"' \
+      '  "github.com/stretchr/testify/require"' \
+      ')' \
+      'func TestCache(t *testing.T) {' \
+      '  require.NotNil(t, &terraform.Options{})' \
+      '  assert.True(t, true)' \
+      '}' \
+      > cache_test.go; \
+    go get "github.com/gruntwork-io/terratest/modules/terraform/v2@v${TERRATEST_VERSION_ARG}"; \
+    go mod tidy; \
+    go test -count=1 ./...; \
+    mkdir -p /opt/terratest; \
+    cp -a /tmp/gomodcache/cache/download /opt/terratest/goproxy; \
+    cd /; \
+    \
+    chown -R 10001:0 /opt/tfenv /opt/terratest; \
+    chmod -R g=u /opt/tfenv /opt/terratest; \
+    \
+    echo "=== Scripts shell + dotfiles + comandos devspaces-* ==="; \
+    install -m 0644 -o 10001 -g 0 /tmp/build-scripts/.bashrc                  /home/tooling/.bashrc; \
+    install -m 0755 -o 10001 -g 0 /tmp/build-scripts/devspaces-environment.sh /home/tooling/devspaces-environment.sh; \
+    install -m 0755 -o 10001 -g 0 /tmp/build-scripts/devspaces-setup.sh       /home/tooling/devspaces-setup.sh; \
+    install -m 0644 -o 10001 -g 0 /home/tooling/.bashrc                       /home/user/.bashrc; \
+    \
+    printf '%s\n' \
+      '#!/usr/bin/env bash' \
+      'exec bash /home/tooling/devspaces-setup.sh "$@"' \
+      > /usr/local/bin/devspaces-setup; \
+    printf '%s\n' \
+      '#!/usr/bin/env bash' \
+      'exec bash /home/tooling/devspaces-environment.sh "$@"' \
+      > /usr/local/bin/devspaces-environment; \
+    printf '%s\n' \
+      '#!/usr/bin/env bash' \
+      'exec cat /etc/devspaces-linux-release' \
+      > /usr/local/bin/devspaces-linux-release; \
+    chmod 0755 /usr/local/bin/devspaces-setup /usr/local/bin/devspaces-environment /usr/local/bin/devspaces-linux-release; \
+    \
+    rm -rf /tmp/build-scripts /tmp/gopath /tmp/gomodcache /tmp/gocache /tmp/* /root/.cache
+
+ENV TFENV_ROOT=/opt/tfenv \
+    TFENV_AUTO_INSTALL=false \
+    CHECKPOINT_DISABLE=1 \
+    TERRATEST_VERSION=${TERRATEST_VERSION_ARG} \
+    GOPROXY=file:///opt/terratest/goproxy,https://proxy.golang.org,direct \
+    BUILDAH_ISOLATION=chroot
+
+USER 10001
