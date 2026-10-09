@@ -18,4 +18,6 @@ _java_env_apply "${version}" || {
     exit 1
 }
 
+export DEVSPACES_JAVA_VERSION="${version}"
+
 exec "$@"

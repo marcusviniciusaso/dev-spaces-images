@@ -24,7 +24,6 @@ _java_env_apply() {
         esac
     done
 
-    export DEVSPACES_JAVA_VERSION="${version}"
     export JAVA_HOME="${java_home}"
     export GRADLE_HOME="/opt/gradle/java-${version}"
     export PATH="${JAVA_HOME}/bin:${GRADLE_HOME}/bin:/opt/spring-boot-cli/java-${version}/bin:${path}"
