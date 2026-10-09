@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+    echo "uso: with-java 8|11|17|21|25 <comando> [args...]" >&2
+    exit 1
+}
+
+[ $# -ge 2 ] || usage
+
+version="$1"; shift
+
+. /etc/profile.d/05-java-versions.sh
+
+_java_env_apply "${version}" || {
+    [ $? -eq 2 ] || usage
+    echo "with-java: JDK ${version} nao encontrado em $(_java_home_for "${version}")" >&2
+    exit 1
+}
+
+exec "$@"

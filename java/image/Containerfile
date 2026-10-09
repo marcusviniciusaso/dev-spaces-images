@@ -1,0 +1,129 @@
+ARG BASE_IMAGE=quay.io/marolive/custom-udi:3.1.1
+FROM ${BASE_IMAGE}
+
+USER 0
+
+ARG MAVEN_VERSION_ARG=3.9.12
+ARG GRADLE_7_VERSION_ARG=7.6.6
+ARG GRADLE_8_VERSION_ARG=8.14.4
+ARG GRADLE_9_VERSION_ARG=9.3.1
+ARG SPRING_BOOT_2_VERSION_ARG=2.7.18
+ARG SPRING_BOOT_4_VERSION_ARG=4.0.3
+
+COPY scripts/ /tmp/build-scripts/
+
+RUN set -euo pipefail; \
+    PM="microdnf"; command -v microdnf >/dev/null 2>&1 || PM="dnf"; \
+    \
+    echo "=== JDKs 8, 11, 17, 21 e 25 ==="; \
+    PKGS=""; \
+    for pkg in java-1.8.0-openjdk-devel java-11-openjdk-devel java-17-openjdk-devel \
+               java-21-openjdk-devel java-25-openjdk-devel; do \
+      if rpm -q "$pkg" >/dev/null 2>&1; then \
+        echo "$pkg ja presente na imagem base; reaproveitando"; \
+      else \
+        PKGS="$PKGS $pkg"; \
+      fi; \
+    done; \
+    if [ -n "$PKGS" ]; then \
+      $PM install -y $PKGS; \
+      $PM clean all; \
+      rm -rf /var/cache/dnf /var/cache/yum; \
+    fi; \
+    for jdk in java-1.8.0-openjdk java-11-openjdk java-17-openjdk java-21-openjdk java-25-openjdk; do \
+      test -x "/usr/lib/jvm/${jdk}/bin/javac"; \
+    done; \
+    \
+    echo "=== Maven ${MAVEN_VERSION_ARG} ==="; \
+    curl -fsSL -o /tmp/maven.tgz \
+      "https://archive.apache.org/dist/maven/maven-3/${MAVEN_VERSION_ARG}/binaries/apache-maven-${MAVEN_VERSION_ARG}-bin.tar.gz"; \
+    mkdir -p /opt/maven; \
+    tar -C /opt/maven -xzf /tmp/maven.tgz; \
+    ln -s "/opt/maven/apache-maven-${MAVEN_VERSION_ARG}" /opt/maven/current; \
+    ln -sf /opt/maven/current/bin/mvn /usr/local/bin/mvn; \
+    rm -f /tmp/maven.tgz; \
+    chown -R 10001:0 /opt/maven; \
+    \
+    echo "=== Gradle ${GRADLE_7_VERSION_ARG} (Java 8/11), ${GRADLE_8_VERSION_ARG} (Java 17/21) e ${GRADLE_9_VERSION_ARG} (Java 25) ==="; \
+    mkdir -p /opt/gradle; \
+    for v in "${GRADLE_7_VERSION_ARG}" "${GRADLE_8_VERSION_ARG}" "${GRADLE_9_VERSION_ARG}"; do \
+      curl -fsSL -o /tmp/gradle.zip \
+        "https://services.gradle.org/distributions/gradle-${v}-bin.zip"; \
+      unzip -q /tmp/gradle.zip -d /opt/gradle; \
+      rm -f /tmp/gradle.zip; \
+    done; \
+    ln -s "gradle-${GRADLE_7_VERSION_ARG}" /opt/gradle/java-8; \
+    ln -s "gradle-${GRADLE_7_VERSION_ARG}" /opt/gradle/java-11; \
+    ln -s "gradle-${GRADLE_8_VERSION_ARG}" /opt/gradle/java-17; \
+    ln -s "gradle-${GRADLE_8_VERSION_ARG}" /opt/gradle/java-21; \
+    ln -s "gradle-${GRADLE_9_VERSION_ARG}" /opt/gradle/java-25; \
+    chown -R 10001:0 /opt/gradle; \
+    \
+    echo "=== Spring Boot CLI ${SPRING_BOOT_2_VERSION_ARG} (Java 8/11) e ${SPRING_BOOT_4_VERSION_ARG} (Java 17/21/25) ==="; \
+    mkdir -p /opt/spring-boot-cli; \
+    for v in "${SPRING_BOOT_2_VERSION_ARG}" "${SPRING_BOOT_4_VERSION_ARG}"; do \
+      curl -fsSL -o /tmp/sbcli.tgz \
+        "https://repo.maven.apache.org/maven2/org/springframework/boot/spring-boot-cli/${v}/spring-boot-cli-${v}-bin.tar.gz"; \
+      tar -C /opt/spring-boot-cli -xzf /tmp/sbcli.tgz; \
+      rm -f /tmp/sbcli.tgz; \
+    done; \
+    ln -s "spring-${SPRING_BOOT_2_VERSION_ARG}" /opt/spring-boot-cli/java-8; \
+    ln -s "spring-${SPRING_BOOT_2_VERSION_ARG}" /opt/spring-boot-cli/java-11; \
+    ln -s "spring-${SPRING_BOOT_4_VERSION_ARG}" /opt/spring-boot-cli/java-17; \
+    ln -s "spring-${SPRING_BOOT_4_VERSION_ARG}" /opt/spring-boot-cli/java-21; \
+    ln -s "spring-${SPRING_BOOT_4_VERSION_ARG}" /opt/spring-boot-cli/java-25; \
+    chown -R 10001:0 /opt/spring-boot-cli; \
+    \
+    echo "=== Troca de JDK (use-java / with-java) + profile.d ==="; \
+    install -m 0644 /tmp/build-scripts/use-java.sh /etc/profile.d/05-java-versions.sh; \
+    install -m 0755 /tmp/build-scripts/with-java   /usr/local/bin/with-java; \
+    printf 'export MAVEN_HOME="/opt/maven/current";\nexport PATH="$MAVEN_HOME/bin:$PATH";\n' \
+      > /etc/profile.d/10-maven.sh; \
+    chmod 0644 /etc/profile.d/10-maven.sh; \
+    printf '%s\n' \
+      '' \
+      'if ! declare -F use-java >/dev/null 2>&1 && [ -r /etc/profile.d/05-java-versions.sh ]; then' \
+      '    . /etc/profile.d/05-java-versions.sh' \
+      'fi' \
+      >> /etc/bashrc; \
+    \
+    echo "=== Checagem do pareamento JDK / Gradle / Spring Boot CLI ==="; \
+    for v in 8 11 17 21 25; do \
+      echo "--- Java $v ---"; \
+      with-java "$v" java -version; \
+      with-java "$v" /opt/maven/current/bin/mvn -version; \
+      GRADLE_USER_HOME=/tmp/gradle-check with-java "$v" gradle --version; \
+      with-java "$v" spring --version; \
+    done; \
+    \
+    echo "=== Scripts shell + dotfiles + comandos devspaces-* ==="; \
+    install -m 0644 -o 10001 -g 0 /tmp/build-scripts/.bashrc                  /home/tooling/.bashrc; \
+    install -m 0755 -o 10001 -g 0 /tmp/build-scripts/devspaces-environment.sh /home/tooling/devspaces-environment.sh; \
+    install -m 0755 -o 10001 -g 0 /tmp/build-scripts/devspaces-setup.sh       /home/tooling/devspaces-setup.sh; \
+    install -m 0644 -o 10001 -g 0 /home/tooling/.bashrc                       /home/user/.bashrc; \
+    \
+    printf '%s\n' \
+      '#!/usr/bin/env bash' \
+      'exec bash /home/tooling/devspaces-setup.sh "$@"' \
+      > /usr/local/bin/devspaces-setup; \
+    printf '%s\n' \
+      '#!/usr/bin/env bash' \
+      'exec bash /home/tooling/devspaces-environment.sh "$@"' \
+      > /usr/local/bin/devspaces-environment; \
+    printf '%s\n' \
+      '#!/usr/bin/env bash' \
+      'exec cat /etc/devspaces-linux-release' \
+      > /usr/local/bin/devspaces-linux-release; \
+    chmod 0755 /usr/local/bin/devspaces-setup /usr/local/bin/devspaces-environment /usr/local/bin/devspaces-linux-release; \
+    \
+    rm -rf /tmp/build-scripts /tmp/gradle-check /tmp/hsperfdata_*
+
+ENV JAVA_HOME="/usr/lib/jvm/java-25-openjdk" \
+    JAVA_HOME_25="/usr/lib/jvm/java-25-openjdk" \
+    USE_JAVA25="true" \
+    JAVA_DEFAULT_VERSION="25" \
+    MAVEN_HOME="/opt/maven/current" \
+    GRADLE_HOME="/opt/gradle/java-25" \
+    PATH="/usr/lib/jvm/java-25-openjdk/bin:/opt/maven/current/bin:/opt/gradle/java-25/bin:/opt/spring-boot-cli/java-25/bin:${PATH}"
+
+USER 10001

@@ -1,0 +1,15 @@
+services:
+  udi-java:
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: Containerfile
+      args:
+        BASE_IMAGE: ${BASE_IMAGE}
+        MAVEN_VERSION_ARG: ${MAVEN_VERSION_ARG}
+        GRADLE_7_VERSION_ARG: ${GRADLE_7_VERSION_ARG}
+        GRADLE_8_VERSION_ARG: ${GRADLE_8_VERSION_ARG}
+        GRADLE_9_VERSION_ARG: ${GRADLE_9_VERSION_ARG}
+        SPRING_BOOT_2_VERSION_ARG: ${SPRING_BOOT_2_VERSION_ARG}
+        SPRING_BOOT_4_VERSION_ARG: ${SPRING_BOOT_4_VERSION_ARG}
+    image: quay.io/${QUAY_ORG}/${IMAGE_NAME}:${IMAGE_TAG}
