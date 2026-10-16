@@ -74,15 +74,16 @@ RUN set -euo pipefail; \
     ln -s "spring-${SPRING_BOOT_4_VERSION_ARG}" /opt/spring-boot-cli/java-25; \
     chown -R 10001:0 /opt/spring-boot-cli; \
     \
-    echo "=== Troca de JDK (use-java / with-java) + profile.d ==="; \
-    install -m 0644 /tmp/build-scripts/use-java.sh /etc/profile.d/05-java-versions.sh; \
-    install -m 0755 /tmp/build-scripts/with-java   /usr/local/bin/with-java; \
+    echo "=== Troca de JDK (devspaces-use-java / devspaces-with-java) + profile.d ==="; \
+    install -m 0644 /tmp/build-scripts/devspaces-use-java.sh /etc/profile.d/05-java-versions.sh; \
+    install -m 0755 /tmp/build-scripts/devspaces-with-java   /usr/local/bin/devspaces-with-java; \
+    ln -s devspaces-with-java /usr/local/bin/with-java; \
     printf 'export MAVEN_HOME="/opt/maven/current";\nexport PATH="$MAVEN_HOME/bin:$PATH";\n' \
       > /etc/profile.d/10-maven.sh; \
     chmod 0644 /etc/profile.d/10-maven.sh; \
     printf '%s\n' \
       '' \
-      'if ! declare -F use-java >/dev/null 2>&1 && [ -r /etc/profile.d/05-java-versions.sh ]; then' \
+      'if ! declare -F devspaces-use-java >/dev/null 2>&1 && [ -r /etc/profile.d/05-java-versions.sh ]; then' \
       '    . /etc/profile.d/05-java-versions.sh' \
       'fi' \
       >> /etc/bashrc; \
@@ -90,10 +91,10 @@ RUN set -euo pipefail; \
     echo "=== Checagem do pareamento JDK / Gradle / Spring Boot CLI ==="; \
     for v in 8 11 17 21 25; do \
       echo "--- Java $v ---"; \
-      with-java "$v" java -version; \
-      with-java "$v" /opt/maven/current/bin/mvn -version; \
-      GRADLE_USER_HOME=/tmp/gradle-check with-java "$v" gradle --version; \
-      with-java "$v" spring --version; \
+      devspaces-with-java "$v" java -version; \
+      devspaces-with-java "$v" /opt/maven/current/bin/mvn -version; \
+      GRADLE_USER_HOME=/tmp/gradle-check devspaces-with-java "$v" gradle --version; \
+      devspaces-with-java "$v" spring --version; \
     done; \
     \
     echo "=== Scripts shell + dotfiles + comandos devspaces-* ==="; \

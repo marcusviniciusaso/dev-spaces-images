@@ -110,8 +110,8 @@ echo "==========================================================================
 echo -e "${YELLOW}Troca de versão do Java:${NC}"
 echo "=============================================================================="
 echo ""
-echo "  use-java 8|11|17|21|25              # troca a versão ativa (fica salva)"
-echo "  with-java 8|11|17|21|25 <comando>   # troca só para o comando"
+echo "  devspaces-use-java 8|11|17|21|25              # troca a versão ativa (fica salva)"
+echo "  devspaces-with-java 8|11|17|21|25 <comando>   # troca só para o comando"
 
 echo ""
 echo "=============================================================================="

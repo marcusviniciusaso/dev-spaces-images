@@ -24,50 +24,56 @@ Os JDKs 8, 11, 17 e 21 vêm da imagem base; o 25 é instalado aqui.
 
 ```bash
 # Troca a versão ativa: ajusta JAVA_HOME, GRADLE_HOME e PATH e imprime java -version
-use-java 8
-use-java 11
-use-java 17
-use-java 21
-use-java 25
+devspaces-use-java 8
+devspaces-use-java 11
+devspaces-use-java 17
+devspaces-use-java 21
+devspaces-use-java 25
 
 # Executa um comando pontual em outra versão, sem mexer no shell
-with-java 8 mvn -version
-with-java 11 gradle build
+devspaces-with-java 8 mvn -version
+devspaces-with-java 11 gradle build
 ```
 
-**`use-java`** grava a escolha em `/home/user/persistent/.java-version`. Os terminais abertos
-depois disso, inclusive após pause/resume do workspace, já iniciam na versão escolhida. Terminais
-que já estavam abertos mantêm a versão deles. Sem o volume persistente, a troca vale só para o
-shell corrente.
+**`devspaces-use-java`** grava a escolha em `/home/user/persistent/.java-version`. Os terminais
+abertos depois disso, inclusive após pause/resume do workspace, já iniciam na versão escolhida.
+Terminais que já estavam abertos mantêm a versão deles. Sem o volume persistente, a troca vale só
+para o shell corrente.
 
-**`with-java`** não grava nada e não altera o shell: a versão vale só para o comando executado.
+**`devspaces-with-java`** não grava nada e não altera o shell: a versão vale só para o comando
+executado.
 
-`use-java` é uma função definida em `/etc/profile.d/05-java-versions.sh`, disponível em shell de
-login e no terminal interativo. Em `bash -c` não interativo (tasks, scripts) vale o default da
-imagem; use `with-java` nesses casos.
+`devspaces-use-java` é uma função definida em `/etc/profile.d/05-java-versions.sh`, disponível em
+shell de login e no terminal interativo. Em `bash -c` não interativo (tasks, scripts) vale o
+default da imagem; use `devspaces-with-java` nesses casos.
 
 O pareamento fica nos symlinks `/opt/gradle/java-<versão>` e `/opt/spring-boot-cli/java-<versão>`.
 Não há `alternatives --set`: o workspace roda com UID arbitrário sob a SCC `restricted-v2` e isso
 exigiria root.
 
-> O editor não segue o `use-java`. A extensão Java detecta os cinco JDKs em `/usr/lib/jvm` e usa,
-> em cada projeto, o que corresponde ao nível de compilação do `pom.xml` ou do `build.gradle`.
+> O editor não segue o `devspaces-use-java`. A extensão Java detecta os cinco JDKs em
+> `/usr/lib/jvm` e usa, em cada projeto, o que corresponde ao nível de compilação do `pom.xml` ou
+> do `build.gradle`.
 
 ## Comandos
 
 | Comando | O que faz |
 | --- | --- |
-| `use-java <versão>` | Troca a versão ativa do Java (com Gradle e Spring Boot CLI) e salva a escolha |
-| `with-java <versão> <comando>` | Executa um comando em outra versão do Java |
+| `devspaces-use-java <versão>` | Troca a versão ativa do Java (com Gradle e Spring Boot CLI) e salva a escolha |
+| `devspaces-with-java <versão> <comando>` | Executa um comando em outra versão do Java |
 | `devspaces-environment` | Mostra as versões das ferramentas e a conectividade com o repositório Maven |
 | `devspaces-setup` | Gera o `settings.xml` do Maven com as credenciais do repositório |
 | `devspaces-linux-release` | Mostra a versão da imagem base |
+| `devspaces-jfrog-login` | Login no registry `JFROG_REGISTRY` com o Podman, mantendo os outros logins |
+| `devspaces-jfrog-pull <imagem>` | Pull de `JFROG_REGISTRY/JFROG_DOCKER_REPO/<imagem>` |
+| `devspaces-jfrog-push <origem> <destino>` | Push de uma imagem local para `JFROG_REGISTRY/JFROG_DOCKER_REPO/<destino>` |
 
-Variável lida pelos scripts (definida no devfile):
+Variáveis lidas pelos scripts e comandos:
 
 | Variável | Uso |
 | --- | --- |
 | `ARTIFACTORY_MAVEN_BASEURL` | Repositório Maven usado como mirror no `settings.xml` |
+| `JFROG_REGISTRY`, `JFROG_DOCKER_REPO` | Registry e repositório dos comandos `devspaces-jfrog-*` (sem valor padrão) |
 
 O `devspaces-setup` pede usuário e senha/token e grava `/home/user/persistent/.m2/settings.xml`
 (modo 600, com backup `.bak`). Enquanto a URL for um placeholder `<...>`, ele aborta sem pedir
@@ -88,13 +94,13 @@ par não funcionar.
 podman run --rm --entrypoint /bin/bash quay.io/${QUAY_ORG}/${IMAGE_NAME}:${IMAGE_TAG} -lc '
   echo "== Default =="; java -version; mvn -version | head -n 3; gradle --version | grep "^Gradle"; spring --version;
   for v in 8 11 17 21 25; do
-    echo "== Java $v =="; use-java $v;
+    echo "== Java $v =="; devspaces-use-java $v;
     mvn -version | grep "Java version";
     gradle --version | grep -E "^Gradle|JVM";
     spring --version;
   done;
-  use-java 25 > /dev/null 2>&1;
-  echo "== with-java =="; with-java 8 java -version; java -version;
+  devspaces-use-java 25 > /dev/null 2>&1;
+  echo "== devspaces-with-java =="; devspaces-with-java 8 java -version; java -version;
   echo "== Environment =="; devspaces-environment;
 '
 ```

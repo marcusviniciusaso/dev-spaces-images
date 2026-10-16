@@ -38,14 +38,14 @@ _java_saved_version() {
     printf '%s' "${version//[[:space:]]/}"
 }
 
-use-java() {
+devspaces-use-java() {
     local version="${1:-}"
 
     _java_env_apply "$version" || {
         if [ $? -eq 2 ]; then
-            echo "use-java: JDK ${version} nao encontrado em $(_java_home_for "$version")" >&2
+            echo "devspaces-use-java: JDK ${version} nao encontrado em $(_java_home_for "$version")" >&2
         else
-            echo "uso: use-java 8|11|17|21|25" >&2
+            echo "uso: devspaces-use-java 8|11|17|21|25" >&2
         fi
         return 1
     }
@@ -56,6 +56,8 @@ use-java() {
 
     java -version
 }
+
+use-java() { devspaces-use-java "$@"; }
 
 _java_env_apply "${DEVSPACES_JAVA_VERSION:-}" \
     || _java_env_apply "$(_java_saved_version)" \

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 usage() {
-    echo "uso: with-java 8|11|17|21|25 <comando> [args...]" >&2
+    echo "uso: devspaces-with-java 8|11|17|21|25 <comando> [args...]" >&2
     exit 1
 }
 
@@ -14,7 +14,7 @@ version="$1"; shift
 
 _java_env_apply "${version}" || {
     [ $? -eq 2 ] || usage
-    echo "with-java: JDK ${version} nao encontrado em $(_java_home_for "${version}")" >&2
+    echo "devspaces-with-java: JDK ${version} nao encontrado em $(_java_home_for "${version}")" >&2
     exit 1
 }
 

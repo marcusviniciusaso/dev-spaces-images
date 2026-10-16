@@ -5,7 +5,7 @@ if [ -f /etc/bashrc ]; then
         . /etc/bashrc
 fi
 
-if ! declare -F use-java >/dev/null 2>&1 && [ -f /etc/profile.d/05-java-versions.sh ]; then
+if ! declare -F devspaces-use-java >/dev/null 2>&1 && [ -f /etc/profile.d/05-java-versions.sh ]; then
     . /etc/profile.d/05-java-versions.sh
 fi
 
@@ -172,7 +172,51 @@ podman-login() {
         mkdir -p "$(dirname "$REGISTRY_AUTH_FILE")"
         podman login --authfile "$REGISTRY_AUTH_FILE" "$registry"
 }
-jfrog-login() { podman-login "$@"; }
+devspaces-jfrog-login() { podman-login "${1:-${JFROG_REGISTRY:-}}"; }
+
+devspaces-jfrog-pull() {
+        local registry="${JFROG_REGISTRY:-}" repo="${JFROG_DOCKER_REPO:-}"
+        if [ -z "$registry" ] || [ -z "$repo" ]; then
+                echo "Defina JFROG_REGISTRY e JFROG_DOCKER_REPO para usar o devspaces-jfrog-pull." >&2
+                return 1
+        fi
+        if [[ -z "${1:-}" || "$1" == "-h" || "$1" == "--help" ]]; then
+                echo "Uso: devspaces-jfrog-pull <caminho-imagem>"
+                echo ""
+                echo "Faz pull de imagem de ${registry}/${repo}/"
+                echo ""
+                echo "Exemplo:"
+                echo "  devspaces-jfrog-pull meu-projeto/minha-imagem:tag"
+                return 1
+        fi
+        podman image pull "${registry}/${repo}/$1"
+}
+
+devspaces-jfrog-push() {
+        local registry="${JFROG_REGISTRY:-}" repo="${JFROG_DOCKER_REPO:-}" dest
+        if [ -z "$registry" ] || [ -z "$repo" ]; then
+                echo "Defina JFROG_REGISTRY e JFROG_DOCKER_REPO para usar o devspaces-jfrog-push." >&2
+                return 1
+        fi
+        if [[ -z "${1:-}" || -z "${2:-}" || "$1" == "-h" || "$1" == "--help" ]]; then
+                echo "Uso: devspaces-jfrog-push <imagem-origem> <destino>"
+                echo ""
+                echo "Faz push de imagem para ${registry}/${repo}/<destino>"
+                echo ""
+                echo "Exemplo:"
+                echo "  devspaces-jfrog-push minha-imagem:tag meu-projeto/minha-imagem:tag"
+                return 1
+        fi
+        dest="${registry}/${repo}/$2"
+        devspaces-jfrog-login "$registry" \
+                && podman image tag "$1" "$dest" \
+                && podman image push "$dest" \
+                && podman image rm -f "$dest"
+}
+
+jfrog-login() { devspaces-jfrog-login "$@"; }
+jfrog-pull() { devspaces-jfrog-pull "$@"; }
+jfrog-push() { devspaces-jfrog-push "$@"; }
 
 # Ensure devspaces helper commands exist even if alias files were not loaded.
 if ! declare -F devspaces-environment >/dev/null 2>&1; then
