@@ -1,0 +1,8 @@
+devspaces_distro:
+  type: java-multi-version
+  version: "1.0.3"
+  release_date: "2026-10-16"
+
+os:
+  name: "Red Hat Enterprise Linux"
+  version: "9.8"

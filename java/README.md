@@ -63,7 +63,7 @@ exigiria root.
 | `devspaces-with-java <versão> <comando>` | Executa um comando em outra versão do Java |
 | `devspaces-environment` | Mostra as versões das ferramentas e a conectividade com o repositório Maven |
 | `devspaces-setup` | Gera o `settings.xml` do Maven com as credenciais do repositório |
-| `devspaces-linux-release` | Mostra a versão da imagem base |
+| `devspaces-linux-release` | Mostra a versão da imagem |
 | `devspaces-jfrog-login` | Login no registry `JFROG_REGISTRY` com o Podman, mantendo os outros logins |
 | `devspaces-jfrog-pull <imagem>` | Pull de `JFROG_REGISTRY/JFROG_DOCKER_REPO/<imagem>` |
 | `devspaces-jfrog-push <origem> <destino>` | Push de uma imagem local para `JFROG_REGISTRY/JFROG_DOCKER_REPO/<destino>` |
