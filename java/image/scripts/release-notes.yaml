@@ -1,7 +1,7 @@
 devspaces_distro:
   type: java-multi-version
-  version: "1.0.3"
-  release_date: "2026-10-16"
+  version: "1.0.4"
+  release_date: "2026-11-05"
 
 os:
   name: "Red Hat Enterprise Linux"
